@@ -1,0 +1,22 @@
+# Build output
+/Debug/
+/Release/
+/build/
+
+# Artefakty kompilacji
+*.o
+*.d
+*.elf
+*.map
+*.bin
+*.hex
+*.lss
+*.srec
+*.su
+*.log
+
+# IDE/os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
