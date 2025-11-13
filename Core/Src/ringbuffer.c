@@ -23,10 +23,10 @@ static inline uint16_t RB_Room(const RingBuffer *ring_buffer){
 }
 
 
-RingBuffer_StatusTypeDef RingBuffer_Init(RingBuffer* ring_buffer, uint8_t *buffer){
+RingBuffer_StatusTypeDef RingBuffer_Init(RingBuffer* ring_buffer, uint8_t *buffer, size_t buffer_size){
     ring_buffer->head = 0;
     ring_buffer->tail = 0;
-    ring_buffer->size = RB_MAX_SIZE;     // pełny rozmiar tablicy buf[]
+    ring_buffer->size = buffer_size;     // pełny rozmiar tablicy buf[]
     ring_buffer->buf = buffer;
     return RB_OK;
 }
@@ -122,7 +122,8 @@ RingBuffer_StatusTypeDef RingBuffer_Write(RingBuffer* ring_buffer, uint8_t data)
 size_t RingBuffer_WriteString(RingBuffer* ring_buffer, const char *text, size_t size){
     size_t ptr = 0;
     while (ptr < size){ //text[ptr] &&
-        if (RingBuffer_Write(ring_buffer, (uint8_t)text[ptr]) != RB_OK) break;
+        if (RingBuffer_Write(ring_buffer, (uint8_t)text[ptr]) != RB_OK)
+        	break;
         ++ptr;
     }
     return ptr;

@@ -21,6 +21,7 @@
 #define MAX_EXTI 16
 #define REFRENCE_V	2500 	//reference voltage in mV
 #define RESOLUTION_BITS	65536
+#define MAX_BUFFER_SIZE 128
 
 /*
  * ADC_MGR is responsible for handling multiple ltc2368, assigning proper SPI instances
@@ -34,6 +35,7 @@ typedef struct {
 	LTC2368_Handler ltc2368_devs[MAX_DEVICES];	//all connected devices, if empty - NULL
 	uint32_t *common_buffer;
 	uint16_t output_buf[MAX_DEVICES];
+	uint8_t usb_stream[MAX_BUFFER_SIZE];
 	__IO uint32_t common_ptr;
 	uint8_t exti_to_dev[MAX_EXTI];				//pin to ID list
 	uint8_t ndevs;								//connected devices
@@ -46,7 +48,7 @@ typedef struct {
 	uint32_t samples_collected;
 	AT_CtxT display_func;						//function for displaying data
 	bool state; 								//adc on/off
-	DMA_Node *chx_lli;
+	DMA_Node *chx_lli[4];
 } ADC_Handler;
 
 enum {

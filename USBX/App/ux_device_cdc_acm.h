@@ -63,7 +63,7 @@ VOID USBD_CDC_ACM_ParameterChange(VOID *cdc_acm_instance);
 uint32_t USBD_CDC_ACM_Transmit(uint8_t* buffer, uint32_t size, uint32_t* sent);
 uint32_t USBD_CDC_ACM_Receive(uint8_t* buffer, uint32_t size, uint32_t* received);
 
-VOID USB_TxPumpFromRing(RingBuffer *rb);
+uint32_t USB_TxPumpFromRing(RingBuffer *rb);
 /* USER CODE END PD */
 
 /* USER CODE BEGIN 1 */

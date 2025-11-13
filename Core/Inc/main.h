@@ -48,7 +48,7 @@ extern "C" {
 
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
-#define BUFFER_SIZE 32768
+#define BUFFER_SIZE 62000// 32768 - 128KB, musi być wielokrotność 4
 #define ADC_BUFFER_SIZE 32
 #define USB_BUFFER_SIZE 64
 #define ADC_CH_BUFFER_SIZE 4

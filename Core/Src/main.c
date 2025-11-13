@@ -59,9 +59,15 @@ PCD_HandleTypeDef hpcd_USB_DRD_FS;
 /* USER CODE BEGIN PV */
 //uint32_t buffer[BUFFER_SIZE];
 
-__attribute__((section(".dma_llist"), aligned(4096))) DMA_Node ch7_lli;
+__attribute__((section(".dma_llist"), aligned(4096))) DMA_Node ch7_lli[4];
+//__attribute__((section(".dma_llist"), aligned(4096))) DMA_Node ch7_lli2;
+//__attribute__((section(".dma_llist"), aligned(4096))) DMA_Node ch7_lli3;
+//__attribute__((section(".dma_llist"), aligned(4096))) DMA_Node ch7_lli4;
 
-uint32_t *node = (uint32_t*)&ch7_lli;
+uint32_t *node = (uint32_t*)ch7_lli;
+//uint32_t *node2 = (uint32_t*)&ch7_lli2;
+//uint32_t *node3 = (uint32_t*)&ch7_lli3;
+//uint32_t *node4 = (uint32_t*)&ch7_lli4;
 
 uint32_t buffer[BUFFER_SIZE];
 uint16_t adc_buffer[ADC_BUFFER_SIZE];
@@ -83,7 +89,7 @@ uint8_t iter = 0;
 extern RingBuffer rb_tx;
 extern RingBuffer rb_rx;
 
-uint8_t rb_tx_buf[8192];
+uint8_t rb_tx_buf[4*MAX_BUFFER_SIZE];
 uint8_t rb_rx_buf[128];
 
 extern bool data_collected;
@@ -727,8 +733,9 @@ void Toggle_Sampling(void){
 
 AT_StatusTypeDef USB_Write(const char* buf, size_t len){
     size_t n = RingBuffer_WriteString(&rb_tx, buf, len);
+    uint32_t packets = 0;
     //Poking TxPump to start transmission
-    USB_TxPumpFromRing(&rb_tx);
+    while (USB_TxPumpFromRing(&rb_tx) != 0) packets++;
     return (n == len) ? AT_OK : AT_ERROR;
 }
 
@@ -750,11 +757,11 @@ void App_ADC_Init(void)
 //    }
 
     AT_Init(USB_Write, NULL);
-    RingBuffer_Init(&rb_rx, rb_rx_buf);
-    RingBuffer_Init(&rb_tx, rb_tx_buf);
+    RingBuffer_Init(&rb_rx, rb_rx_buf, 128);
+    RingBuffer_Init(&rb_tx, rb_tx_buf, 4*MAX_BUFFER_SIZE);
     ADC_CommandInit();
 
-    if (!ADC_Init(&g_adc, &htim3, TIM_CHANNEL_1, &ch7_lli, buffer, busy_pins, USB_Write, NULL)) {
+    if (!ADC_Init(&g_adc, &htim3, TIM_CHANNEL_1, ch7_lli, buffer, busy_pins, USB_Write, NULL)) {
         Error_Handler();
     }
 }

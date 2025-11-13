@@ -28,7 +28,7 @@ typedef struct RingBuffer {
 	uint16_t size;
 } RingBuffer;
 
-RingBuffer_StatusTypeDef RingBuffer_Init(RingBuffer* ring_buffer, uint8_t* buffer);
+RingBuffer_StatusTypeDef RingBuffer_Init(RingBuffer* ring_buffer, uint8_t* buffer, size_t buffer_size);
 RingBuffer_StatusTypeDef RingBuffer_Read(RingBuffer* ring_buffer, uint8_t* rx_buf);
 size_t RingBuffer_PeekBlock(RingBuffer *ring_buffer, uint8_t *dst, size_t maxlen);
 size_t RingBuffer_Consume(RingBuffer *ring_buffer, size_t n);

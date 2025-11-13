@@ -30,7 +30,11 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef enum {
+	TX_IDLE = 0,
+	TX_BUSY,
+	TX_ERROR
+} USB_Tx_typeDef;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -59,6 +63,7 @@ bool data_collected = false;
 RingBuffer rb_tx;
 RingBuffer rb_rx;
 uint16_t successful_packets = 0;
+uint32_t successful_transfers = 0;
 
 static volatile uint8_t g_usb_tx_busy = 0;     // 0 = można wysyłać
 static uint8_t g_usb_tx_frame[64];              // ramka USB FS (MaxPacket = 64 B)
@@ -133,12 +138,31 @@ uint32_t USBD_CDC_ACM_Transmit(uint8_t* buffer, uint32_t size, uint32_t* sent){
     UINT retVal;
     if(cdc_acm!=NULL)
     {
-      do
-      {
-        retVal = ux_device_class_cdc_acm_write_run(cdc_acm,buffer,size,sent);
-      }
-      while(UX_STATE_NEXT != retVal);
-      return 0;
+    	uint8_t tx_state = TX_IDLE;
+		do
+		{
+			switch(tx_state){
+				case TX_IDLE:
+					retVal = ux_device_class_cdc_acm_write_run(cdc_acm,buffer,size,sent);
+					if (retVal == UX_STATE_WAIT) tx_state = TX_BUSY;
+					break;
+				case TX_BUSY:
+					retVal = ux_device_class_cdc_acm_write_run(cdc_acm, UX_NULL, 0, sent);
+				    if (retVal == UX_STATE_NEXT) {
+				    	tx_state = TX_IDLE;
+				    }
+				    else if (retVal == UX_STATE_ERROR)
+				    {
+				    	tx_state = TX_ERROR;
+				    	Error_Handler();
+				    }
+				    break;
+			}
+//			retVal = ux_device_class_cdc_acm_write_run(cdc_acm,buffer,size,sent);
+		}
+		while(UX_STATE_NEXT != retVal);
+		successful_transfers++;
+		return 0;
     }
     else
     {
@@ -174,17 +198,18 @@ uint32_t USBD_CDC_ACM_Receive(uint8_t* buffer, uint32_t size, uint32_t* received
 }
 
 // Pompa TX: spróbuj wysłać kolejny blok z ringu
-VOID USB_TxPumpFromRing(RingBuffer *rb)
+uint32_t USB_TxPumpFromRing(RingBuffer *rb)
 {
-	if (cdc_acm == UX_NULL) return;
+	if (cdc_acm == UX_NULL) return 1;
 //    if (!USB_EpCanTx()) return;       // EP (Endpoint) zajęty
 	uint32_t sent=0;
 
     size_t n = RingBuffer_PeekBlock(rb, g_usb_tx_frame, sizeof(g_usb_tx_frame));
-    if (n == 0) return;
+    if (n == 0) return 0;
 
     if (USBD_CDC_ACM_Transmit(g_usb_tx_frame, (uint32_t)n, &sent) == 0){
         (void)RingBuffer_Consume(rb, n);   // zużyj dopiero po sukcesie
     }
+    return 1;
 }
 /* USER CODE END 1 */

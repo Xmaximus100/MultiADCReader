@@ -59,7 +59,7 @@ static inline uint32_t ADC_FetchReady(ADC_Handler *m) {
     return m->ready_mask == m->ready_to_disp_mask;
 }
 
-bool ADC_Init(ADC_Handler *m, TIM_HandleTypeDef *tim_master, uint32_t tim_master_ch, DMA_Node *chx_lli, uint32_t* buffer, const GPIO_Assignment busy_pins[], AT_WriteFunc func, void *user){
+bool ADC_Init(ADC_Handler *m, TIM_HandleTypeDef *tim_master, uint32_t tim_master_ch, DMA_Node chx_lli[], uint32_t* buffer, const GPIO_Assignment busy_pins[], AT_WriteFunc func, void *user){
 	memset(m, 0, sizeof(*m));
 	m->ready_mask = 0;
 	m->clock_handler.tim_master = tim_master;
@@ -68,7 +68,10 @@ bool ADC_Init(ADC_Handler *m, TIM_HandleTypeDef *tim_master, uint32_t tim_master
 	m->samples_requested = 0xFFF;
 	m->display_func.write = func;
 	m->display_func.user = user;
-	m->chx_lli = chx_lli;
+	m->chx_lli[0] = &chx_lli[0];
+	m->chx_lli[1] = &chx_lli[1];
+	m->chx_lli[2] = &chx_lli[2];
+	m->chx_lli[3] = &chx_lli[3];
 	m->common_buffer = buffer;
 	for (uint8_t i=0;i<MAX_EXTI;i++) m->exti_to_dev[i] = 0xFF; //0xFF indicates empty line
 	for (uint8_t i=0;i<MAX_DEVICES;i++) {
@@ -111,7 +114,7 @@ void ADC_Acquire(ADC_Handler *m){
 	if (PSSI_HAL_PSSI_ReceiveComplete_count==0)
 		return;
 	ADC_MarkReady(m);
-	if (!ADC_FetchReady(m)){
+	if (!ADC_FetchReady(m) && m->format == 1){
 		ADC_ReportError(2, (void*)m->ready_mask); //vulnerable
 	}
 	if (m->format == 0){
@@ -217,24 +220,34 @@ bool ADC_DisplaySamples_Clear(ADC_Handler *m, bool reset_buf, uint32_t custom_sa
 	return true;
 }
 
-bool ADC_DisplaySamples_Raw(ADC_Handler *m, bool reset_buf, uint32_t custom_samples_requested){
-//	LTC2368_StopSampling(&m->clock_handler);
-	if (reset_buf == 1)
-		m->common_ptr = 0;
-	uint32_t samples_requested;
-	if (custom_samples_requested == 0) samples_requested = m->samples_requested;
-	else samples_requested = custom_samples_requested;
-	uint8_t frame[2*8];
-//	uint16_t tmp_buffer[8];
-	const uint8_t *raw = (const uint8_t*)m->common_buffer;
-	for(uint32_t off=0; off<samples_requested*16; off+=16){
-		deint_8x16_swar_msb_first(raw + off, m->output_buf);
-		for(uint8_t k=0; k<8; k++){
-			memcpy(frame+2*k, &(m->output_buf[k]), 2); //2 bytes for each sample
-		}
-		if (m->display_func.write((char*)frame, 2*8) != AT_OK) return false;
-	}
-	return true;
+bool ADC_DisplaySamples_Raw(ADC_Handler *m, bool reset_buf, uint32_t custom_samples_requested)
+{
+    if (reset_buf) m->common_ptr = 0;
+
+    uint32_t samples_requested = custom_samples_requested ? custom_samples_requested : m->samples_requested;
+    uint8_t *frame = m->usb_stream;                 // bufor o rozmiarze MAX_BUFFER_SIZE (128 B)
+    uint32_t in_frame = 0;                          // offset w bieżącej ramce 0..127
+    const uint8_t *raw = (const uint8_t*)m->common_buffer;
+
+    for (uint32_t off = 0; off < samples_requested * 16; off += 16) {
+        deint_8x16_swar_msb_first(raw + off, m->output_buf); // 8 próbek po 2 B = 16 B
+
+        for (uint8_t k = 0; k < 8; k++) {
+            memcpy(frame + in_frame, &m->output_buf[k], 2);
+            in_frame += 2;
+
+            if (in_frame == MAX_BUFFER_SIZE) {      // dokładnie 128 B
+                if (m->display_func.write((char*)frame, MAX_BUFFER_SIZE) != AT_OK) return false;
+                in_frame = 0;                       // rozpoczynamy nową ramkę od początku frame
+            }
+        }
+    }
+
+    if (in_frame) {                                 // ogon niepełnej ramki
+        if (m->display_func.write((char*)frame, in_frame) != AT_OK) return false;
+    }
+
+    return true;
 }
 
 bool ADC_BusyCheck(void){
@@ -280,24 +293,23 @@ static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update)
 
   if (update)
   {
-	  m->chx_lli->CTR1 =  (0u << DMA_CTR1_SDW_LOG2_Pos)   // źródło 8-bit
+	  m->chx_lli[0]->CTR1 =  (0u << DMA_CTR1_SDW_LOG2_Pos)   // źródło 8-bit
 					  | (0u << DMA_CTR1_SINC_Pos)       // źródło FIXED
 					  | (2u << DMA_CTR1_DDW_LOG2_Pos)   // cel 32-bit
 					  |  DMA_CTR1_DINC                  // inkrementuj cel
 					  |  DMA_CTR1_DAP                   // port1
 					  | (2u << DMA_CTR1_PAM_Pos),     // WŁĄCZ pakowanie 4×8→32
 
-	  m->chx_lli->CTR2 = ((uint32_t)DCMI_PSSI_IRQn & DMA_CTR2_REQSEL_Msk);  /* lepiej: GPDMA1_REQUEST_PSSI << REQSEL_Pos */
-	  m->chx_lli->CBR1 = (((uint32_t)m->samples_requested << 4) & ~3u) & DMA_CBR1_BNDT_Msk;  /* 32 elementy (tu 32×4B = 128B) */
-	  m->chx_lli->CSAR = (uint32_t)&PSSI_NS->DR;
-	  m->chx_lli->CDAR = (uint32_t)m->common_buffer;
-	  m->chx_lli->CTR3 = 0;
-	  m->chx_lli->CBR2 = 0;
-	  m->chx_lli->CLLR = DMA_CLLR_ULL | DMA_CLLR_USA | DMA_CLLR_UDA
+	  m->chx_lli[0]->CTR2 = ((uint32_t)DCMI_PSSI_IRQn & DMA_CTR2_REQSEL_Msk);  /* lepiej: GPDMA1_REQUEST_PSSI << REQSEL_Pos */
+	  m->chx_lli[0]->CBR1 = (((uint32_t)m->samples_requested << 4) & ~3u) & DMA_CBR1_BNDT_Msk;  /* 32 elementy (tu 32×4B = 128B) */
+	  m->chx_lli[0]->CSAR = (uint32_t)&PSSI_NS->DR;
+	  m->chx_lli[0]->CDAR = (uint32_t)m->common_buffer;
+	  m->chx_lli[0]->CTR3 = 0;
+	  m->chx_lli[0]->CBR2 = 0;
+	  m->chx_lli[0]->CLLR = DMA_CLLR_ULL | DMA_CLLR_USA | DMA_CLLR_UDA
 	               | DMA_CLLR_UB1 | DMA_CLLR_UT1 | DMA_CLLR_UT2;        /* LA=0 dzięki 4KB align */
 	  /* --- seed: LA=0 dzięki 4KB align --- */
-	  WRITE_REG(ch->CLBAR, (uint32_t)m->chx_lli);        /* LBA = baza 4KB = adres węzła */ //this might be a vulrenable spot - check if address is consistent
-
+	  WRITE_REG(ch->CLBAR, (uint32_t)m->chx_lli[0]);        /* LBA = baza 4KB = adres węzła */ //this might be a vulrenable spot - check if address is consistent
   }
   WRITE_REG(ch->CLLR,   DMA_CLLR_ULL                 /* update link addr z węzła    */
                      |  DMA_CLLR_USA                /* ZAŁADUJ SAR                 */
