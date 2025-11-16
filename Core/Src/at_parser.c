@@ -137,12 +137,12 @@ void AT_ReadBuf(char *buf, size_t len){
 
 bool AT_StrToSignedInt(const char *s, int32_t *out){
     if (!s || !out) return false;
-    errno = 0;
+//    errno = 0;
     char *end = NULL;
     long v = strtol(s, &end, 10);      // base 10; use 0 to auto-detect 0x.., 0.., 10..
     if (end == s)           return false;                // no digits
     if (*end != '\0')       return false;                // trailing junk
-    if (errno == ERANGE)    return false;                // overflow/underflow
+//    if (errno == ERANGE)    return false;                // overflow/underflow
     if (v < INT32_MIN || v > INT32_MAX) return false;    // range check
     *out = (int32_t)v;
     return true;
@@ -150,12 +150,12 @@ bool AT_StrToSignedInt(const char *s, int32_t *out){
 
 bool AT_StrToUnsignedInt(const char *s, uint32_t *out){
     if (!s || !out) return false;
-    errno = 0;
+//    errno = 0;
     char *end = NULL;
     unsigned long v = strtoul(s, &end, 10);             // base 10
     if (end == s)           return false;
     if (*end != '\0')       return false;
-    if (errno == ERANGE)    return false;
+//    if (errno == ERANGE)    return false;
     if (v > UINT32_MAX)     return false;
     *out = (uint32_t)v;
     return true;

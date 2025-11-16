@@ -7,6 +7,10 @@
 
 #include "adc_mgr.h"
 
+// Stałe pomocnicze
+#define GPDMA_BNDT_MAX_BYTES   ((uint32_t)0xFFFFu)   // maska BNDT (16 bitów)
+#define GPDMA_BNDT_ALIGN       (4u)                  // pakowanie 4×8 → 32, wyrównanie do 4 B
+#define GPDMA_BNDT_MAX_ALIGNED (GPDMA_BNDT_MAX_BYTES & ~(GPDMA_BNDT_ALIGN-1u))
 
 ADC_Handler g_adc;
 ADC_Handler * const g_adc_mgr = &g_adc;
@@ -21,7 +25,12 @@ static inline uint16_t bitrev16(uint16_t x);
 static inline void deint_8x16_swar_msb_first(const uint8_t *b, uint16_t ch[8]);
 static inline void RCCandGPIO_Config_Regs(void);
 static inline void PSSI_Config_Regs(void);
-static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update);
+//static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update);
+static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update, uint32_t requested_samples);
+static inline uint32_t GPDMA1_CH7_Build_PSSI_LL(ADC_Handler *m, uint32_t requested_samples);
+static inline uint32_t compute_LA_offset(const DMA_Node *base, const DMA_Node *next);
+static inline uint32_t make_CTR2_req_pssi(void);
+static inline uint32_t make_CTR1_p2m_pack_4x8_to_32(void);
 
 
 uint8_t ADC_PinToIndex(uint16_t GPIO_Pin){
@@ -64,7 +73,9 @@ bool ADC_Init(ADC_Handler *m, TIM_HandleTypeDef *tim_master, uint32_t tim_master
 	m->ready_mask = 0;
 	m->clock_handler.tim_master = tim_master;
 	m->clock_handler.tim_master_ch = tim_master_ch;
+	m->clock_handler.freq = 2000;
 	m->ready_to_disp = 0;
+	m->continuous = true;
 	m->samples_requested = 0xFFF;
 	m->display_func.write = func;
 	m->display_func.user = user;
@@ -72,6 +83,7 @@ bool ADC_Init(ADC_Handler *m, TIM_HandleTypeDef *tim_master, uint32_t tim_master
 	m->chx_lli[1] = &chx_lli[1];
 	m->chx_lli[2] = &chx_lli[2];
 	m->chx_lli[3] = &chx_lli[3];
+	m->nodes_used = -1;
 	m->common_buffer = buffer;
 	for (uint8_t i=0;i<MAX_EXTI;i++) m->exti_to_dev[i] = 0xFF; //0xFF indicates empty line
 	for (uint8_t i=0;i<MAX_DEVICES;i++) {
@@ -83,10 +95,11 @@ bool ADC_Init(ADC_Handler *m, TIM_HandleTypeDef *tim_master, uint32_t tim_master
 	return true;
 }
 
-bool ADC_ManagerInit(ADC_Handler *m, uint8_t dev_amount){
+bool ADC_ManagerInit(ADC_Handler *m, uint8_t dev_amount, bool mode){
 	m->ndevs = dev_amount;
 	m->ready_to_disp_mask = 0;
 	m->common_ptr = 0;
+	m->continuous = mode;
 	for(uint8_t i=0;i<dev_amount;i++){
 		m->ltc2368_devs[i].samples_requested = &m->samples_requested;
 		m->ltc2368_devs[i].device_id = i;
@@ -111,33 +124,30 @@ static inline void ADC_ReportError(uint8_t error_code, void *user){
 
 void ADC_Acquire(ADC_Handler *m){
 	// We skim through ready_mask and operate on every id that has been reported
-	if (PSSI_HAL_PSSI_ReceiveComplete_count==0)
+	if (PSSI_HAL_PSSI_ReceiveComplete_count!=m->nodes_used)
 		return;
-	ADC_MarkReady(m);
-	if (!ADC_FetchReady(m) && m->format == 1){
-		ADC_ReportError(2, (void*)m->ready_mask); //vulnerable
-	}
+	LTC2368_StopSampling(&m->clock_handler);
 	if (m->format == 0){
 		if (ADC_DisplaySamples_Raw(m, RESET_BUF, 0) == false){
 			ADC_ReportError(0, NULL);
 		}
-		else
-		{
-			GPDMA1_CH7_Config_PSSI_P2M_LLI(m, true);
-			LTC2368_StartSampling(&m->clock_handler);
-			PSSI_HAL_PSSI_ReceiveComplete_count = 0;
-		}
 	}
 	else {
+		ADC_MarkReady(m);
+		if (!ADC_FetchReady(m)){
+			ADC_ReportError(2, (void*)m->ready_mask); //vulnerable
+		}
 		if (ADC_DisplaySamples_Clear(m, RESET_BUF, 0) == false){
 			ADC_ReportError(0, NULL);
 		}
-		else
-		{
-			GPDMA1_CH7_Config_PSSI_P2M_LLI(m, true);
-			LTC2368_StartSampling(&m->clock_handler);
-			PSSI_HAL_PSSI_ReceiveComplete_count = 0;
-		}
+	}
+	PSSI_HAL_PSSI_ReceiveComplete_count = 0;
+	if (m->continuous){
+		GPDMA1_CH7_Config_PSSI_P2M_LLI(m, true, m->samples_requested);
+		LTC2368_StartSampling(&m->clock_handler);
+	}
+	else {
+		m->state = false;
 	}
 }
 
@@ -281,47 +291,47 @@ static inline void PSSI_Config_Regs(void)
 
 /* ========================= GPDMA ========================= */
 
-static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update)
-{
-  DMA_Channel_TypeDef *ch = GPDMA1_Channel7_NS;
-
-  /* Wyłącz kanał i wyczyść flagi */
-  CLEAR_BIT(ch->CCR, DMA_CCR_EN);
-  if (ch->CSR & DMA_CSR_IDLEF)
-	  SET_BIT(ch->CCR, DMA_CCR_RESET);
-  WRITE_REG(ch->CFCR, DMA_CFCR_TCF|DMA_CFCR_HTF|DMA_CFCR_DTEF|DMA_CFCR_ULEF|DMA_CFCR_USEF|DMA_CFCR_TOF);
-
-  if (update)
-  {
-	  m->chx_lli[0]->CTR1 =  (0u << DMA_CTR1_SDW_LOG2_Pos)   // źródło 8-bit
-					  | (0u << DMA_CTR1_SINC_Pos)       // źródło FIXED
-					  | (2u << DMA_CTR1_DDW_LOG2_Pos)   // cel 32-bit
-					  |  DMA_CTR1_DINC                  // inkrementuj cel
-					  |  DMA_CTR1_DAP                   // port1
-					  | (2u << DMA_CTR1_PAM_Pos),     // WŁĄCZ pakowanie 4×8→32
-
-	  m->chx_lli[0]->CTR2 = ((uint32_t)DCMI_PSSI_IRQn & DMA_CTR2_REQSEL_Msk);  /* lepiej: GPDMA1_REQUEST_PSSI << REQSEL_Pos */
-	  m->chx_lli[0]->CBR1 = (((uint32_t)m->samples_requested << 4) & ~3u) & DMA_CBR1_BNDT_Msk;  /* 32 elementy (tu 32×4B = 128B) */
-	  m->chx_lli[0]->CSAR = (uint32_t)&PSSI_NS->DR;
-	  m->chx_lli[0]->CDAR = (uint32_t)m->common_buffer;
-	  m->chx_lli[0]->CTR3 = 0;
-	  m->chx_lli[0]->CBR2 = 0;
-	  m->chx_lli[0]->CLLR = DMA_CLLR_ULL | DMA_CLLR_USA | DMA_CLLR_UDA
-	               | DMA_CLLR_UB1 | DMA_CLLR_UT1 | DMA_CLLR_UT2;        /* LA=0 dzięki 4KB align */
-	  /* --- seed: LA=0 dzięki 4KB align --- */
-	  WRITE_REG(ch->CLBAR, (uint32_t)m->chx_lli[0]);        /* LBA = baza 4KB = adres węzła */ //this might be a vulrenable spot - check if address is consistent
-  }
-  WRITE_REG(ch->CLLR,   DMA_CLLR_ULL                 /* update link addr z węzła    */
-                     |  DMA_CLLR_USA                /* ZAŁADUJ SAR                 */
-                     |  DMA_CLLR_UDA                /* ZAŁADUJ DAR                 */
-                     |  DMA_CLLR_UB1                /* ZAŁADUJ BR1                 */
-                     |  DMA_CLLR_UT1                /* ZAŁADUJ TR1                 */
-                     |  DMA_CLLR_UT2);              /* ZAŁADUJ TR2                 */
-
-  /* IRQ kanału i start */
-  SET_BIT(ch->CCR, DMA_CCR_TCIE | DMA_CCR_USEIE);
-  CLEAR_BIT(ch->CCR, DMA_CCR_HTIE | DMA_CCR_DTEIE | DMA_CCR_TOIE | DMA_CCR_ULEIE);
-  SET_BIT(ch->CCR, DMA_CCR_EN);
+//static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update)
+//{
+//  DMA_Channel_TypeDef *ch = GPDMA1_Channel7_NS;
+//
+//  /* Wyłącz kanał i wyczyść flagi */
+//  CLEAR_BIT(ch->CCR, DMA_CCR_EN);
+//  if (ch->CSR & DMA_CSR_IDLEF)
+//	  SET_BIT(ch->CCR, DMA_CCR_RESET);
+//  WRITE_REG(ch->CFCR, DMA_CFCR_TCF|DMA_CFCR_HTF|DMA_CFCR_DTEF|DMA_CFCR_ULEF|DMA_CFCR_USEF|DMA_CFCR_TOF);
+//
+//  if (update)
+//  {
+//	  m->chx_lli[0]->CTR1 =  (0u << DMA_CTR1_SDW_LOG2_Pos)   // źródło 8-bit
+//					  | (0u << DMA_CTR1_SINC_Pos)       // źródło FIXED
+//					  | (2u << DMA_CTR1_DDW_LOG2_Pos)   // cel 32-bit
+//					  |  DMA_CTR1_DINC                  // inkrementuj cel
+//					  |  DMA_CTR1_DAP                   // port1
+//					  | (2u << DMA_CTR1_PAM_Pos),     // WŁĄCZ pakowanie 4×8→32
+//
+//	  m->chx_lli[0]->CTR2 = ((uint32_t)DCMI_PSSI_IRQn & DMA_CTR2_REQSEL_Msk);  /* lepiej: GPDMA1_REQUEST_PSSI << REQSEL_Pos */
+//	  m->chx_lli[0]->CBR1 = (((uint32_t)m->samples_requested << 4) & ~3u) & DMA_CBR1_BNDT_Msk;  /* 32 elementy (tu 32×4B = 128B) */
+//	  m->chx_lli[0]->CSAR = (uint32_t)&PSSI_NS->DR;
+//	  m->chx_lli[0]->CDAR = (uint32_t)m->common_buffer;
+//	  m->chx_lli[0]->CTR3 = 0;
+//	  m->chx_lli[0]->CBR2 = 0;
+//	  m->chx_lli[0]->CLLR = DMA_CLLR_ULL | DMA_CLLR_USA | DMA_CLLR_UDA
+//	               | DMA_CLLR_UB1 | DMA_CLLR_UT1 | DMA_CLLR_UT2;        /* LA=0 dzięki 4KB align */
+//	  /* --- seed: LA=0 dzięki 4KB align --- */
+//	  WRITE_REG(ch->CLBAR, (uint32_t)m->chx_lli[0]);        /* LBA = baza 4KB = adres węzła */ //this might be a vulrenable spot - check if address is consistent
+//  }
+//  WRITE_REG(ch->CLLR,   DMA_CLLR_ULL                 /* update link addr z węzła    */
+//                     |  DMA_CLLR_USA                /* ZAŁADUJ SAR                 */
+//                     |  DMA_CLLR_UDA                /* ZAŁADUJ DAR                 */
+//                     |  DMA_CLLR_UB1                /* ZAŁADUJ BR1                 */
+//                     |  DMA_CLLR_UT1                /* ZAŁADUJ TR1                 */
+//                     |  DMA_CLLR_UT2);              /* ZAŁADUJ TR2                 */
+//
+//  /* IRQ kanału i start */
+//  SET_BIT(ch->CCR, DMA_CCR_TCIE | DMA_CCR_USEIE);
+//  CLEAR_BIT(ch->CCR, DMA_CCR_HTIE | DMA_CCR_DTEIE | DMA_CCR_TOIE | DMA_CCR_ULEIE);
+//  SET_BIT(ch->CCR, DMA_CCR_EN);
 
 /* ---------------- TEST --------------- */
 /* ****** Working ******  */
@@ -354,7 +364,7 @@ static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update)
 //	SET_BIT(ch->CCR, DMA_CCR_TCIE|DMA_CCR_DTEIE|DMA_CCR_TOIE|DMA_CCR_ULEIE|DMA_CCR_USEIE);
 //
 //	SET_BIT(ch->CCR, DMA_CCR_EN);
-}
+//}
 
 static inline void RCCandGPIO_Config_Regs(void)
 {
@@ -407,8 +417,119 @@ void ADC_ChangeRequestedSamples(ADC_Handler *m, uint16_t new_request)
 {
 	m->samples_requested = new_request;
 	PSSI->CR &= ~PSSI_CR_ENABLE;
-	GPDMA1_CH7_Config_PSSI_P2M_LLI(m, true);
+	GPDMA1_CH7_Config_PSSI_P2M_LLI(m, true, m->samples_requested);
 	PSSI_Config_Regs();
+}
+
+
+static inline uint32_t make_CTR1_p2m_pack_4x8_to_32(void)
+{
+    return  (0u << DMA_CTR1_SDW_LOG2_Pos)   /* źródło 8-bit */
+          | (0u << DMA_CTR1_SINC_Pos)       /* źródło FIXED */
+          | (2u << DMA_CTR1_DDW_LOG2_Pos)   /* cel 32-bit   */
+          |  DMA_CTR1_DINC                  /* inkrementuj cel */
+          |  DMA_CTR1_DAP                   /* port1 (dest) */
+          | (2u << DMA_CTR1_PAM_Pos);       /* pakowanie 4×8→32 */
+}
+
+static inline uint32_t make_CTR2_req_pssi(void)
+{
+    return ((uint32_t)DCMI_PSSI_IRQn & DMA_CTR2_REQSEL_Msk);
+}
+
+/* Zwraca offset LA (bits[15:2]) do następnego węzła względem CLBAR.
+   Węzły muszą leżeć w tej samej 4KB stronie (masz aligned(4096)). */
+static inline uint32_t compute_LA_offset(const DMA_Node *base, const DMA_Node *next)
+{
+    uintptr_t b = (uintptr_t)base;
+    uintptr_t n = (uintptr_t)next;
+    uint32_t  off = (uint32_t)(n - b);  // w bajtach
+    /* CLLR.LA jest kodowane w słowach 4B (bits[15:2]); przy 4KB align nie przekroczysz 0xFFF */
+    return ((off >> 2) & 0x3FFFu) << DMA_CLLR_LA_Pos;  // użyj właściwej pozycji bitów LA
+}
+
+/* Konfiguracja listy węzłów dla PSSI → pamięć (LLI) pod żądane próbki */
+static inline uint32_t GPDMA1_CH7_Build_PSSI_LL(ADC_Handler *m, uint32_t requested_samples)
+{
+	DMA_Node **nodes = m->chx_lli;           // ch7_lli[4] w sekcji 4KB aligned
+    const uint32_t total_bytes = 16u * requested_samples;   // 8 kanałów × 2 B = 16 B na „paczkę”
+    uint32_t remaining = total_bytes;
+    uint32_t nodes_used = 0;
+
+    /* wskaźnik docelowy (pakowanie 4×8→32 => na 4 bajty powstaje 1 słowo) */
+    uint32_t *dst = (uint32_t*)m->common_buffer;
+
+    while (remaining && nodes_used < 4u)
+    {
+        DMA_Node *nd = nodes[nodes_used];
+        uint32_t chunk = (remaining > GPDMA_BNDT_MAX_ALIGNED) ? GPDMA_BNDT_MAX_ALIGNED : remaining;
+
+        nd->CTR1 = make_CTR1_p2m_pack_4x8_to_32();
+        nd->CTR2 = make_CTR2_req_pssi();
+
+        /* BNDT – liczba bajtów, wyrównana do 4 (wymóg pakowania) */
+        nd->CBR1 = (chunk & DMA_CBR1_BNDT_Msk);
+
+        nd->CSAR = (uint32_t)&PSSI_NS->DR;
+        nd->CDAR = (uint32_t)dst;
+
+        nd->CTR3 = 0;
+        nd->CBR2 = 0;
+
+        /* Domyślnie: aktualizuj wszystko; LA ustawiony niżej jeśli jest kolejny węzeł */
+        nd->CLLR = 0;
+//        nd->CLLR = DMA_CLLR_ULL | DMA_CLLR_USA | DMA_CLLR_UDA
+//                 | DMA_CLLR_UB1 | DMA_CLLR_UT1 | DMA_CLLR_UT2;
+
+        /* przesuwamy pointer docelowy o chunk/4 słów (pakowanie) */
+        dst       += (chunk / 4u);
+        remaining -= chunk;
+        nodes_used++;
+    }
+
+    /* Dowiąż kolejne węzły LLI przez ustawienie LA w CLLR poprzedniego */
+    for (uint32_t i = 0; i + 1 < nodes_used; ++i)
+    {
+        uint32_t la = compute_LA_offset(nodes[0], nodes[i+1]);
+        /* Wpisz LA do CLLR, zachowując bity ULL/USA/UDA/UB1/UT1/UT2 */
+        nodes[i]->CLLR = (nodes[i]->CLLR & ~(DMA_CLLR_LA_Msk)) | la
+        		 | DMA_CLLR_ULL | DMA_CLLR_USA | DMA_CLLR_UDA
+				 | DMA_CLLR_UB1 | DMA_CLLR_UT1 | DMA_CLLR_UT2;
+    }
+
+    /* Ostatni węzeł: LA = 0 (koniec listy) – zostaw jak jest; ULL/USA/... mogą pozostać ustawione. */
+    return nodes_used;
+}
+
+static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update, uint32_t requested_samples)
+{
+  DMA_Channel_TypeDef *ch = GPDMA1_Channel7_NS;
+
+  /* Wyłącz kanał i wyczyść flagi */
+  CLEAR_BIT(ch->CCR, DMA_CCR_EN);
+//  if (ch->CSR & DMA_CSR_IDLEF)
+  SET_BIT(ch->CCR, DMA_CCR_RESET);
+  WRITE_REG(ch->CFCR, DMA_CFCR_TCF|DMA_CFCR_HTF|DMA_CFCR_DTEF|DMA_CFCR_ULEF|DMA_CFCR_USEF|DMA_CFCR_TOF);
+
+  /* Zbuduj LLI pod aktualny rozmiar */
+  m->nodes_used = GPDMA1_CH7_Build_PSSI_LL(m, requested_samples);
+
+  /* Seed: baza 4KB wskazuje na pierwszy węzeł */
+  WRITE_REG(ch->CLBAR, (uint32_t)m->chx_lli[0]);
+
+  /* Przy loadzie z CLBAR/CLLR: załaduj wszystko z pierwszego węzła */
+  WRITE_REG(ch->CLLR, //m->chx_lli[0]->CLLR );
+		  	  	  	 	 DMA_CLLR_ULL
+                     |  DMA_CLLR_USA
+                     |  DMA_CLLR_UDA
+                     |  DMA_CLLR_UB1
+                     |  DMA_CLLR_UT1
+                     |  DMA_CLLR_UT2);
+
+  /* IRQ kanału i start */
+  SET_BIT(ch->CCR, DMA_CCR_TCIE | DMA_CCR_USEIE);
+  CLEAR_BIT(ch->CCR, DMA_CCR_HTIE | DMA_CCR_DTEIE | DMA_CCR_TOIE | DMA_CCR_ULEIE);
+  SET_BIT(ch->CCR, DMA_CCR_EN);
 }
 
 /*

@@ -225,8 +225,19 @@ void GPDMA1_Channel7_IRQHandler(void)
 	uint32_t sr = ch->CSR;                                                                /* :contentReference[oaicite:14]{index=14} */
 
 	if (sr & DMA_CSR_TCF) {
-		LTC2368_StopSampling(&g_adc_mgr->clock_handler);/* Transfer complete */     /* :contentReference[oaicite:15]{index=15} */
-		WRITE_REG(ch->CFCR, DMA_CFCR_TCF);                                                  /* clear TC */              /* :contentReference[oaicite:16]{index=16} */
+		WRITE_REG(ch->CFCR, DMA_CFCR_TCF);
+//		if (g_adc_mgr->nodes_remaining > 1)
+//		{
+//			g_adc_mgr->nodes_remaining--;
+//			SET_BIT(ch->CCR, DMA_CCR_EN);
+//		}
+//		else
+//		{
+//			LTC2368_StopSampling(&g_adc_mgr->clock_handler);
+//			PSSI_HAL_PSSI_ReceiveComplete_count++;
+//		}
+		/* Transfer complete */     /* :contentReference[oaicite:15]{index=15} */
+		                                                  /* clear TC */              /* :contentReference[oaicite:16]{index=16} */
 		//	    /* pseudo-CIRC: odśwież BNDT i ponownie włącz kanał */
 		//	    MODIFY_REG(ch->CBR1, DMA_CBR1_BNDT, (BUFFER_SIZE & DMA_CBR1_BNDT_Msk));            /* :contentReference[oaicite:17]{index=17} */
 		//		TIM3->CCER &= ~TIM_CCER_CC1E;              // pin OFF
@@ -252,7 +263,7 @@ void GPDMA1_Channel7_IRQHandler(void)
 		if (user_code_error < 2u)
 		{
 			WRITE_REG(ch->CFCR, DMA_CFCR_USEF);
-			WRITE_REG(ch->CLBAR, (uint32_t)g_adc_mgr->chx_lli);        /* LBA = baza 4KB = adres węzła */
+			WRITE_REG(ch->CLBAR, (uint32_t)g_adc_mgr->chx_lli[0]);        /* LBA = baza 4KB = adres węzła */
 			WRITE_REG(ch->CLLR,  DMA_CLLR_ULL                 /* update link addr z węzła    */
 						   |  DMA_CLLR_USA                /* ZAŁADUJ SAR                 */
 						   |  DMA_CLLR_UDA                /* ZAŁADUJ DAR                 */
@@ -269,7 +280,7 @@ void GPDMA1_Channel7_IRQHandler(void)
 	//		  /* clear USE */             /* :contentReference[oaicite:22]{index=22}turn20file2 */
 	}
   /* USER CODE END GPDMA1_Channel7_IRQn 0 */
-//  HAL_DMA_IRQHandler(&handle_GPDMA1_Channel7);
+  HAL_DMA_IRQHandler(&handle_GPDMA1_Channel7);
   /* USER CODE BEGIN GPDMA1_Channel7_IRQn 1 */
 
   /* USER CODE END GPDMA1_Channel7_IRQn 1 */

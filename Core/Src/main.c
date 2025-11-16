@@ -165,6 +165,7 @@ int main(void)
   HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);   // arming timer, waiting for TRIG
   HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_1);   // arming timer, waiting for TRIG
   HAL_TIM_OC_Stop(&htim3, TIM_CHANNEL_1);   // arming timer, waiting for TRIG
+  LTC2368_SelectSource(&g_adc_mgr->clock_handler, SYSTEM_FREQ);
 //  TIM3->CCER &= ~TIM_CCER_CC1E;              // pin OFF
 //  __HAL_TIM_DISABLE(&htim3);
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);   // arming timer, waiting for TRIG
@@ -440,6 +441,7 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 0 */
 
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
   TIM_OC_InitTypeDef sConfigOC = {0};
 
@@ -452,6 +454,18 @@ static void MX_TIM3_Init(void)
   htim3.Init.Period = 999;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_ETRMODE2;
+  sClockSourceConfig.ClockPolarity = TIM_CLOCKPOLARITY_NONINVERTED;
+  sClockSourceConfig.ClockPrescaler = TIM_CLOCKPRESCALER_DIV1;
+  sClockSourceConfig.ClockFilter = 0;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
   if (HAL_TIM_OC_Init(&htim3) != HAL_OK)
   {
     Error_Handler();
@@ -677,6 +691,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
@@ -687,8 +702,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LTC3_BUSY_Pin LTC1_BUSY_Pin LTC0_BUSY_Pin LTC5_BUSY_Pin */
-  GPIO_InitStruct.Pin = LTC3_BUSY_Pin|LTC1_BUSY_Pin|LTC0_BUSY_Pin|LTC5_BUSY_Pin;
+  /*Configure GPIO pins : LTC3_BUSY_Pin LTC1_BUSY_Pin LTC6_BUSY_Pin LTC0_BUSY_Pin
+                           LTC5_BUSY_Pin */
+  GPIO_InitStruct.Pin = LTC3_BUSY_Pin|LTC1_BUSY_Pin|LTC6_BUSY_Pin|LTC0_BUSY_Pin
+                          |LTC5_BUSY_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
@@ -708,8 +725,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LTC6_BUSY_Pin LTC4_BUSY_Pin LTC2_BUSY_Pin LTC7_BUSY_Pin */
-  GPIO_InitStruct.Pin = LTC6_BUSY_Pin|LTC4_BUSY_Pin|LTC2_BUSY_Pin|LTC7_BUSY_Pin;
+  /*Configure GPIO pins : LTC4_BUSY_Pin LTC2_BUSY_Pin LTC7_BUSY_Pin */
+  GPIO_InitStruct.Pin = LTC4_BUSY_Pin|LTC2_BUSY_Pin|LTC7_BUSY_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);

@@ -24,13 +24,23 @@ LTC2368_StatusTypeDef LTC2368_ConfigSampling(LTC2368_SamplingClock *sampling_con
 
 	uint32_t period = 1000;
 	uint32_t prescaler = 1;
-	sampling_conf->freq = frequency;
-	while((prescaler*period*frequency)<SYSTEM_FREQ){
-		prescaler++;
+	if (sampling_conf->ref_freq == SYSTEM_FREQ)
+	{
+		while((prescaler*period*frequency)<sampling_conf->ref_freq){
+			prescaler++;
+		}
+		while((prescaler*period*frequency)>sampling_conf->ref_freq){
+			period--;
+		}
 	}
-	while((prescaler*period*frequency)>SYSTEM_FREQ){
-		period--;
+	else
+	{
+		period = 1;
+		while((period*frequency)<sampling_conf->ref_freq){
+			period++;
+		}
 	}
+
 	sampling_conf->tim_master->Instance->ARR = period-1;
 
 	/* Set the Prescaler value */
@@ -44,8 +54,18 @@ LTC2368_StatusTypeDef LTC2368_ConfigSampling(LTC2368_SamplingClock *sampling_con
 	/* Clear the update flag */
 		CLEAR_BIT(sampling_conf->tim_master->Instance->SR, TIM_FLAG_UPDATE);
 	}
-
+	sampling_conf->freq = frequency;
 //	__HAL_TIM_ENABLE(sampling_conf->tim_master); //
+	return LTC2368_OK;
+}
+
+LTC2368_StatusTypeDef LTC2368_SelectSource(LTC2368_SamplingClock *sampling_conf, uint32_t source){
+	sampling_conf->ref_freq = source;
+	if (source != SYSTEM_FREQ)
+
+		SET_BIT(sampling_conf->tim_master->Instance->SMCR, TIM_SMCR_ECE|TIM_SMCR_ETP);
+	else
+		CLEAR_BIT(sampling_conf->tim_master->Instance->SMCR, TIM_SMCR_ECE);
 	return LTC2368_OK;
 }
 

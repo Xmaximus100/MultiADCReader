@@ -48,7 +48,7 @@ extern "C" {
 
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
-#define BUFFER_SIZE 62000// 32768 - 128KB, musi być wielokrotność 4
+#define BUFFER_SIZE 65000// 32768 - 128KB, musi być wielokrotność 4
 #define ADC_BUFFER_SIZE 32
 #define USB_BUFFER_SIZE 64
 #define ADC_CH_BUFFER_SIZE 4
@@ -77,8 +77,8 @@ void MX_USB_PCD_Init(void);
 #define LTC3_BUSY_GPIO_Port GPIOC
 #define LTC1_BUSY_Pin GPIO_PIN_15
 #define LTC1_BUSY_GPIO_Port GPIOC
-#define LTC6_BUSY_Pin GPIO_PIN_0
-#define LTC6_BUSY_GPIO_Port GPIOB
+#define LTC6_BUSY_Pin GPIO_PIN_4
+#define LTC6_BUSY_GPIO_Port GPIOC
 #define LTC4_BUSY_Pin GPIO_PIN_2
 #define LTC4_BUSY_GPIO_Port GPIOB
 #define LTC2_BUSY_Pin GPIO_PIN_14

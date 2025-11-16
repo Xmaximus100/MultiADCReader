@@ -40,6 +40,7 @@ typedef struct {
 	uint8_t exti_to_dev[MAX_EXTI];				//pin to ID list
 	uint8_t ndevs;								//connected devices
 	bool ready_to_disp;							//ready to display status
+	bool continuous;
 	uint16_t ready_to_disp_mask;				//mask for ready to display check
 	uint8_t format; 							//display format 0-raw, 1-readable
 	uint32_t refresh_interval; 					//display periods
@@ -49,6 +50,7 @@ typedef struct {
 	AT_CtxT display_func;						//function for displaying data
 	bool state; 								//adc on/off
 	DMA_Node *chx_lli[4];
+	uint32_t nodes_used;
 } ADC_Handler;
 
 enum {
@@ -60,7 +62,7 @@ extern ADC_Handler g_adc;
 extern ADC_Handler * const g_adc_mgr;
 
 bool ADC_Init(ADC_Handler *m, TIM_HandleTypeDef *tim_master, uint32_t tim_master_ch, DMA_Node *chx_lli, uint32_t* buffer, const GPIO_Assignment busy_pins[], AT_WriteFunc func, void *user);
-bool ADC_ManagerInit(ADC_Handler *m, uint8_t dev_amount);
+bool ADC_ManagerInit(ADC_Handler *m, uint8_t dev_amount, bool mode);
 void ADC_Acquire(ADC_Handler *m);
 bool ADC_StartSampling(void);
 bool ADC_StopSampling(void);
