@@ -15,6 +15,7 @@
 ADC_Handler g_adc;
 ADC_Handler * const g_adc_mgr = &g_adc;
 __IO uint32_t PSSI_HAL_PSSI_ReceiveComplete_count = 0;
+uint32_t user_code_error = 0;
 extern uint32_t *node;
 
 static inline int NextSetBit(uint32_t *msk);
@@ -68,12 +69,9 @@ static inline uint32_t ADC_FetchReady(ADC_Handler *m) {
     return m->ready_mask == m->ready_to_disp_mask;
 }
 
-bool ADC_Init(ADC_Handler *m, TIM_HandleTypeDef *tim_master, uint32_t tim_master_ch, DMA_Node chx_lli[], uint32_t* buffer, const GPIO_Assignment busy_pins[], AT_WriteFunc func, void *user){
-	memset(m, 0, sizeof(*m));
+bool ADC_Init(ADC_Handler *m, DMA_Node chx_lli[], DMA_Channel_TypeDef* dma_handler, uint32_t* buffer, const GPIO_Assignment busy_pins[], AT_WriteFunc func, void *user){
+//	memset(m, 0, sizeof(*m));
 	m->ready_mask = 0;
-	m->clock_handler.tim_master = tim_master;
-	m->clock_handler.tim_master_ch = tim_master_ch;
-	m->clock_handler.freq = 2000;
 	m->ready_to_disp = 0;
 	m->continuous = true;
 	m->samples_requested = 0xFFF;
@@ -83,6 +81,10 @@ bool ADC_Init(ADC_Handler *m, TIM_HandleTypeDef *tim_master, uint32_t tim_master
 	m->chx_lli[1] = &chx_lli[1];
 	m->chx_lli[2] = &chx_lli[2];
 	m->chx_lli[3] = &chx_lli[3];
+	m->dma_handler = dma_handler;
+	m->dma_flags_reg = &dma_handler->CSR;
+	m->dma_tc_flag_mask = DMA_CFCR_TCF;
+	m->dma_us_flag_mask = DMA_CFCR_USEF;
 	m->nodes_used = -1;
 	m->common_buffer = buffer;
 	for (uint8_t i=0;i<MAX_EXTI;i++) m->exti_to_dev[i] = 0xFF; //0xFF indicates empty line
@@ -291,81 +293,6 @@ static inline void PSSI_Config_Regs(void)
 
 /* ========================= GPDMA ========================= */
 
-//static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update)
-//{
-//  DMA_Channel_TypeDef *ch = GPDMA1_Channel7_NS;
-//
-//  /* Wyłącz kanał i wyczyść flagi */
-//  CLEAR_BIT(ch->CCR, DMA_CCR_EN);
-//  if (ch->CSR & DMA_CSR_IDLEF)
-//	  SET_BIT(ch->CCR, DMA_CCR_RESET);
-//  WRITE_REG(ch->CFCR, DMA_CFCR_TCF|DMA_CFCR_HTF|DMA_CFCR_DTEF|DMA_CFCR_ULEF|DMA_CFCR_USEF|DMA_CFCR_TOF);
-//
-//  if (update)
-//  {
-//	  m->chx_lli[0]->CTR1 =  (0u << DMA_CTR1_SDW_LOG2_Pos)   // źródło 8-bit
-//					  | (0u << DMA_CTR1_SINC_Pos)       // źródło FIXED
-//					  | (2u << DMA_CTR1_DDW_LOG2_Pos)   // cel 32-bit
-//					  |  DMA_CTR1_DINC                  // inkrementuj cel
-//					  |  DMA_CTR1_DAP                   // port1
-//					  | (2u << DMA_CTR1_PAM_Pos),     // WŁĄCZ pakowanie 4×8→32
-//
-//	  m->chx_lli[0]->CTR2 = ((uint32_t)DCMI_PSSI_IRQn & DMA_CTR2_REQSEL_Msk);  /* lepiej: GPDMA1_REQUEST_PSSI << REQSEL_Pos */
-//	  m->chx_lli[0]->CBR1 = (((uint32_t)m->samples_requested << 4) & ~3u) & DMA_CBR1_BNDT_Msk;  /* 32 elementy (tu 32×4B = 128B) */
-//	  m->chx_lli[0]->CSAR = (uint32_t)&PSSI_NS->DR;
-//	  m->chx_lli[0]->CDAR = (uint32_t)m->common_buffer;
-//	  m->chx_lli[0]->CTR3 = 0;
-//	  m->chx_lli[0]->CBR2 = 0;
-//	  m->chx_lli[0]->CLLR = DMA_CLLR_ULL | DMA_CLLR_USA | DMA_CLLR_UDA
-//	               | DMA_CLLR_UB1 | DMA_CLLR_UT1 | DMA_CLLR_UT2;        /* LA=0 dzięki 4KB align */
-//	  /* --- seed: LA=0 dzięki 4KB align --- */
-//	  WRITE_REG(ch->CLBAR, (uint32_t)m->chx_lli[0]);        /* LBA = baza 4KB = adres węzła */ //this might be a vulrenable spot - check if address is consistent
-//  }
-//  WRITE_REG(ch->CLLR,   DMA_CLLR_ULL                 /* update link addr z węzła    */
-//                     |  DMA_CLLR_USA                /* ZAŁADUJ SAR                 */
-//                     |  DMA_CLLR_UDA                /* ZAŁADUJ DAR                 */
-//                     |  DMA_CLLR_UB1                /* ZAŁADUJ BR1                 */
-//                     |  DMA_CLLR_UT1                /* ZAŁADUJ TR1                 */
-//                     |  DMA_CLLR_UT2);              /* ZAŁADUJ TR2                 */
-//
-//  /* IRQ kanału i start */
-//  SET_BIT(ch->CCR, DMA_CCR_TCIE | DMA_CCR_USEIE);
-//  CLEAR_BIT(ch->CCR, DMA_CCR_HTIE | DMA_CCR_DTEIE | DMA_CCR_TOIE | DMA_CCR_ULEIE);
-//  SET_BIT(ch->CCR, DMA_CCR_EN);
-
-/* ---------------- TEST --------------- */
-/* ****** Working ******  */
-	// PSSI
-//	SET_BIT(RCC->AHB2ENR, RCC_AHB2ENR_DCMI_PSSIEN);
-//	WRITE_REG(PSSI_NS->ICR, PSSI_ICR_OVR_ISC);
-//	WRITE_REG(PSSI_NS->IER, PSSI_IER_OVR_IE);
-//	WRITE_REG(PSSI_NS->CR,  PSSI_CR_CKPOL | PSSI_CR_ENABLE | PSSI_CR_DMAEN);
-//
-//	// DMA ch7
-//	SET_BIT(RCC->AHB1ENR, RCC_AHB1ENR_GPDMA1EN);
-//	DMA_Channel_TypeDef *ch = GPDMA1_Channel7_NS;
-//
-//	CLEAR_BIT(ch->CCR, DMA_CCR_EN);
-//	WRITE_REG(ch->CFCR, DMA_CFCR_TCF|DMA_CFCR_HTF|DMA_CFCR_DTEF|DMA_CFCR_ULEF|DMA_CFCR_USEF|DMA_CFCR_TOF);
-//
-//	// 32-bit, src FIXED, dst INC, dest via port1
-//	WRITE_REG(ch->CTR1, (2u<<DMA_CTR1_SDW_LOG2_Pos) | (0u<<DMA_CTR1_SINC_Pos) |
-//	                    (2u<<DMA_CTR1_DDW_LOG2_Pos) | DMA_CTR1_DINC | DMA_CTR1_DAP);
-//
-//	// REQSEL = DCMI/PSSI = 108 (0x6C)
-//	WRITE_REG(ch->CTR2, ((uint32_t)DCMI_PSSI_IRQn & DMA_CTR2_REQSEL_Msk));
-//
-//	// adresy + BNDT multiple of 4
-//	WRITE_REG(ch->CSAR, (uint32_t)&PSSI_NS->DR);      // oczekuj: 0x4202C428
-//	WRITE_REG(ch->CDAR, (uint32_t)buffer);            // 4B aligned
-//	MODIFY_REG(ch->CBR1, DMA_CBR1_BNDT, (BUFFER_SIZE & ~3u) & DMA_CBR1_BNDT_Msk);
-//
-//	// przerwania wg potrzeb
-//	SET_BIT(ch->CCR, DMA_CCR_TCIE|DMA_CCR_DTEIE|DMA_CCR_TOIE|DMA_CCR_ULEIE|DMA_CCR_USEIE);
-//
-//	SET_BIT(ch->CCR, DMA_CCR_EN);
-//}
-
 static inline void RCCandGPIO_Config_Regs(void)
 {
 	GPIO_InitTypeDef GPIO_InitStruct = {0};
@@ -454,7 +381,7 @@ static inline uint32_t GPDMA1_CH7_Build_PSSI_LL(ADC_Handler *m, uint32_t request
 	DMA_Node **nodes = m->chx_lli;           // ch7_lli[4] w sekcji 4KB aligned
     const uint32_t total_bytes = 16u * requested_samples;   // 8 kanałów × 2 B = 16 B na „paczkę”
     uint32_t remaining = total_bytes;
-    uint32_t nodes_used = 0;
+    int32_t nodes_used = 0;
 
     /* wskaźnik docelowy (pakowanie 4×8→32 => na 4 bajty powstaje 1 słowo) */
     uint32_t *dst = (uint32_t*)m->common_buffer;
@@ -488,7 +415,7 @@ static inline uint32_t GPDMA1_CH7_Build_PSSI_LL(ADC_Handler *m, uint32_t request
     }
 
     /* Dowiąż kolejne węzły LLI przez ustawienie LA w CLLR poprzedniego */
-    for (uint32_t i = 0; i + 1 < nodes_used; ++i)
+    for (int32_t i = 0; i + 1 < nodes_used; ++i)
     {
         uint32_t la = compute_LA_offset(nodes[0], nodes[i+1]);
         /* Wpisz LA do CLLR, zachowując bity ULL/USA/UDA/UB1/UT1/UT2 */
@@ -503,7 +430,7 @@ static inline uint32_t GPDMA1_CH7_Build_PSSI_LL(ADC_Handler *m, uint32_t request
 
 static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update, uint32_t requested_samples)
 {
-  DMA_Channel_TypeDef *ch = GPDMA1_Channel7_NS;
+  DMA_Channel_TypeDef *ch = g_adc_mgr->dma_handler;
 
   /* Wyłącz kanał i wyczyść flagi */
   CLEAR_BIT(ch->CCR, DMA_CCR_EN);
@@ -532,6 +459,51 @@ static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update, u
   SET_BIT(ch->CCR, DMA_CCR_EN);
 }
 
+void ADC_TIM_IRQHandler(void){
+	LTC2368_SlaveIrqHandling(&g_adc_mgr->clock_handler.tim_delay, &g_adc_mgr->clock_handler.tim_slave, &g_adc_mgr->common_ptr);
+	/* Temporal solution for overloading data collection */
+//	if (g_adc_mgr->common_ptr>g_adc_mgr->samples_requested && PSSI_HAL_PSSI_ReceiveComplete_count<g_adc_mgr->nodes_used){
+//		LTC2368_StopSampling(&g_adc_mgr->clock_handler);
+//		PSSI_HAL_PSSI_ReceiveComplete_count=0;
+//		g_adc_mgr->common_ptr=0;
+//		if (g_adc_mgr->continuous){
+//			GPDMA1_CH7_Config_PSSI_P2M_LLI(g_adc_mgr, true, g_adc_mgr->samples_requested);
+//			LTC2368_StartSampling(&g_adc_mgr->clock_handler);
+//		}
+//		else {
+//			g_adc_mgr->state = false;
+//		}
+//	}
+
+}
+
+void ADC_DMA_IRQHandler(void){
+	if (*g_adc_mgr->dma_flags_reg & g_adc_mgr->dma_tc_flag_mask) {
+		WRITE_REG(g_adc_mgr->dma_handler->CFCR, g_adc_mgr->dma_tc_flag_mask);                                           /* restart */               /* :contentReference[oaicite:18]{index=18} */
+		PSSI_HAL_PSSI_ReceiveComplete_count++;
+	}
+	if (*g_adc_mgr->dma_flags_reg & g_adc_mgr->dma_us_flag_mask)
+	{
+		if (user_code_error < 2u)
+		{
+			WRITE_REG(g_adc_mgr->dma_handler->CFCR, DMA_CFCR_USEF);
+			WRITE_REG(g_adc_mgr->dma_handler->CLBAR, (uint32_t)g_adc_mgr->chx_lli[0]);        /* LBA = baza 4KB = adres węzła */
+			WRITE_REG(g_adc_mgr->dma_handler->CLLR,  DMA_CLLR_ULL                 /* update link addr z węzła    */
+						   |  DMA_CLLR_USA                /* ZAŁADUJ SAR                 */
+						   |  DMA_CLLR_UDA                /* ZAŁADUJ DAR                 */
+						   |  DMA_CLLR_UB1                /* ZAŁADUJ BR1                 */
+						   |  DMA_CLLR_UT1                /* ZAŁADUJ TR1                 */
+						   |  DMA_CLLR_UT2);              /* ZAŁADUJ TR2                 */
+			SET_BIT(g_adc_mgr->dma_handler->CCR, DMA_CCR_EN);
+			user_code_error++;
+		}
+		else
+		{
+		  Error_Handler();
+		}
+	//		  /* clear USE */             /* :contentReference[oaicite:22]{index=22}turn20file2 */
+	}
+}
 /*
  * Those functions I decided to leave as a placeholder for alternative changes in architecture
  */

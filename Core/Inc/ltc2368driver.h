@@ -13,7 +13,7 @@
 #define LTC2368_MAX_MEMORY 16383 //2<<18 = 524288
 #define SYSTEM_FREQ 64000000
 #define REF_FREQ 10000000
-#define MAX_SAMPLING_FREQ 500000
+#define MAX_SAMPLING_FREQ 1000000
 #define MAX_SAMPLES_REQUESTED BUFFER_SIZE/4
 
 typedef struct {
@@ -58,24 +58,38 @@ typedef struct LTC2368_Handler {
 	uint8_t *ready_to_disp;
 } LTC2368_Handler;
 
+typedef struct LTC2368_ClockHandler {
+	TIM_TypeDef *instance; //drives cnv signal
+	uint32_t ch;
+	uint32_t ch_itr; //timer channel itr ch1-1, ch2-2, ch3-4, etc.
+	bool is_advanced;
+} LTC2368_ClockHandler;
+
 typedef struct LTC2368_SamplingClock {
 	GPIO_Assignment cnv_pin;
 	uint32_t freq;
 	uint32_t ref_freq;
-	TIM_HandleTypeDef *tim_master;
-	uint32_t tim_master_ch;
-	TIM_HandleTypeDef *tim_slave;
-	uint32_t tim_slave_ch;
+	LTC2368_ClockHandler tim_master; //defines sampling frequency
+	LTC2368_ClockHandler tim_slave; //drives cnv signal
+	LTC2368_ClockHandler tim_delay; //controls communication timer
+	LTC2368_ClockHandler tim_comm; //drives communication with adc
 } LTC2368_SamplingClock;
 
+LTC2368_StatusTypeDef LTC2368_Init(LTC2368_SamplingClock *sampling_clock, TIM_TypeDef *tim_master, uint32_t tim_master_ch, TIM_TypeDef *tim_slave, uint32_t tim_slave_ch, TIM_TypeDef *tim_delay, uint32_t tim_delay_ch, TIM_TypeDef *tim_comm, uint32_t tim_comm_ch);
 LTC2368_StatusTypeDef LTC2368_Read(LTC2368_Handler *ltc2368_dev);
 LTC2368_StatusTypeDef LTC2368_Convert(LTC2368_Handler *ltc2368_dev);
 LTC2368_StatusTypeDef LTC2368_Unclock(LTC2368_Handler *ltc2368_dev);
 LTC2368_StatusTypeDef LTC2368_Lock(LTC2368_Handler *ltc2368_dev);
 LTC2368_StatusTypeDef LTC2368_ConfigSampling(LTC2368_SamplingClock *sampling_conf, uint32_t frequency);
 LTC2368_StatusTypeDef LTC2368_SelectSource(LTC2368_SamplingClock *sampling_conf, uint32_t source);
+LTC2368_StatusTypeDef LTC2368_ArmTimers(LTC2368_SamplingClock *sampling_conf);
+LTC2368_StatusTypeDef LTC2368_EnableTimer(TIM_TypeDef *tim, uint32_t channel);
+LTC2368_StatusTypeDef LTC2368_DisableTimer(TIM_TypeDef *tim, uint32_t channel);
+LTC2368_StatusTypeDef LTC2368_EnableTimer_IT(TIM_TypeDef *tim, uint32_t channel, uint32_t *channel_itr);
+LTC2368_StatusTypeDef LTC2368_DisableTimer_IT(TIM_TypeDef *tim, uint32_t channel, uint32_t *channel_itr);
 LTC2368_StatusTypeDef LTC2368_StartSampling(LTC2368_SamplingClock *sampling_conf);
 LTC2368_StatusTypeDef LTC2368_StopSampling(LTC2368_SamplingClock *sampling_conf);
+void LTC2368_SlaveIrqHandling(LTC2368_ClockHandler *tim_delay, LTC2368_ClockHandler *tim_comm, volatile uint32_t *counter);
 LTC2368_StatusTypeDef LTC2368_DisplaySamples(LTC2368_Handler *ltc2368_dev, uint16_t requested_samples, char *text_buf);
 
 #endif /* INC_LTC2368DRIVER_H_ */

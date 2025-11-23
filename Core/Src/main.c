@@ -161,14 +161,17 @@ int main(void)
 
 //  HAL_TIM_OC_Start(&htim2, TIM_CHANNEL_2);  // uruchamia wyjście kanału
 //  HAL_TIMEx_OCN_Start_IT(&htim2, TIM_CHANNEL_2);
-  HAL_TIM_OC_Start_IT(&htim2, TIM_CHANNEL_2);
-  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);   // arming timer, waiting for TRIG
-  HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_1);   // arming timer, waiting for TRIG
-  HAL_TIM_OC_Stop(&htim3, TIM_CHANNEL_1);   // arming timer, waiting for TRIG
-  LTC2368_SelectSource(&g_adc_mgr->clock_handler, SYSTEM_FREQ);
+//  HAL_TIM_OC_Start_IT(&htim2, TIM_CHANNEL_2);
+
+//  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);   // arming timer, waiting for TRIG
+
+//  HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_1);   // arming timer, waiting for TRIG
+//  HAL_TIM_OC_Stop(&htim3, TIM_CHANNEL_1);   // arming timer, waiting for TRIG
 //  TIM3->CCER &= ~TIM_CCER_CC1E;              // pin OFF
 //  __HAL_TIM_DISABLE(&htim3);
-  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);   // arming timer, waiting for TRIG
+
+//  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);   // arming timer, waiting for TRIG
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -565,7 +568,7 @@ static void MX_TIM8_Init(void)
 
   /* USER CODE END TIM8_Init 1 */
   htim8.Instance = TIM8;
-  htim8.Init.Prescaler = 3;
+  htim8.Init.Prescaler = 0;
   htim8.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim8.Init.Period = 3;
   htim8.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -669,7 +672,8 @@ void MX_USB_PCD_Init(void)
   HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS , 0x03 , PCD_SNG_BUF, 0xF0);//EP3 OUT
 
   _ux_dcd_stm32_initialize((ULONG)NULL, (ULONG)&hpcd_USB_DRD_FS);
-
+  /* Manually clearing SOF interrupt, to reduce unnecessary interupts handle*/
+  hpcd_USB_DRD_FS.Instance->CNTR &= ~(1u<<9);
   HAL_PCD_Start(&hpcd_USB_DRD_FS);
   /* USER CODE END USB_Init 2 */
 
@@ -777,10 +781,14 @@ void App_ADC_Init(void)
     RingBuffer_Init(&rb_rx, rb_rx_buf, 128);
     RingBuffer_Init(&rb_tx, rb_tx_buf, 4*MAX_BUFFER_SIZE);
     ADC_CommandInit();
+    LTC2368_Init(&g_adc.clock_handler, (&htim3)->Instance, TIM_CHANNEL_1, (&htim2)->Instance, TIM_CHANNEL_2, (&htim4)->Instance, TIM_CHANNEL_4, (&htim8)->Instance, TIM_CHANNEL_1);
 
-    if (!ADC_Init(&g_adc, &htim3, TIM_CHANNEL_1, ch7_lli, buffer, busy_pins, USB_Write, NULL)) {
+    if (!ADC_Init(&g_adc, ch7_lli, GPDMA1_Channel7_NS, buffer, busy_pins, USB_Write, NULL)) {
         Error_Handler();
     }
+
+    LTC2368_ArmTimers(&g_adc_mgr->clock_handler);
+    LTC2368_SelectSource(&g_adc_mgr->clock_handler, SYSTEM_FREQ);
 }
 /* USER CODE END 4 */
 

@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define AT_MAX_LINE 30
+#define AT_MAX_LINE 40
 #define AT_MAX_RESPONSE 200
 #define AT_MAX_TOKENS 10
 #define AT_MAX_CMDS 40

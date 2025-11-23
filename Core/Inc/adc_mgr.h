@@ -49,8 +49,12 @@ typedef struct {
 	uint32_t samples_collected;
 	AT_CtxT display_func;						//function for displaying data
 	bool state; 								//adc on/off
-	DMA_Node *chx_lli[4];
-	uint32_t nodes_used;
+	DMA_Node *chx_lli[4];						//list of linked list pointers
+	DMA_Channel_TypeDef* dma_handler;			//main dma handler
+	__IO uint32_t *dma_flags_reg;
+	uint32_t dma_tc_flag_mask;
+	uint32_t dma_us_flag_mask;
+	int32_t nodes_used;
 } ADC_Handler;
 
 enum {
@@ -61,7 +65,7 @@ enum {
 extern ADC_Handler g_adc;
 extern ADC_Handler * const g_adc_mgr;
 
-bool ADC_Init(ADC_Handler *m, TIM_HandleTypeDef *tim_master, uint32_t tim_master_ch, DMA_Node *chx_lli, uint32_t* buffer, const GPIO_Assignment busy_pins[], AT_WriteFunc func, void *user);
+bool ADC_Init(ADC_Handler *m, DMA_Node *chx_lli, DMA_Channel_TypeDef *dma_handler, uint32_t* buffer, const GPIO_Assignment busy_pins[], AT_WriteFunc func, void *user);
 bool ADC_ManagerInit(ADC_Handler *m, uint8_t dev_amount, bool mode);
 void ADC_Acquire(ADC_Handler *m);
 bool ADC_StartSampling(void);
@@ -72,5 +76,7 @@ bool ADC_DisplaySamples_Clear(ADC_Handler *m, bool reset_buf, uint32_t custom_sa
 bool ADC_DisplaySamples_Raw(ADC_Handler *m, bool reset_buf, uint32_t custom_samples_requested);
 bool ADC_BusyCheck(void);
 void ADC_ChangeRequestedSamples(ADC_Handler *m, uint16_t new_request);
+void ADC_TIM_IRQHandler(void);
+void ADC_DMA_IRQHandler(void);
 
 #endif /* INC_ADC_MGR_H_ */
