@@ -83,6 +83,7 @@ static void inline LTC2368_ArmAdvancedTimer(TIM_TypeDef *tim, bool is_advanced){
 
 LTC2368_StatusTypeDef LTC2368_ArmTimers(LTC2368_SamplingClock *sampling_conf){
 	LTC2368_EnableTimer_IT(sampling_conf->tim_slave.instance, sampling_conf->tim_slave.ch, &sampling_conf->tim_slave.ch_itr);
+	LTC2368_EnableTimer(sampling_conf->tim_slave.instance, sampling_conf->tim_slave.ch);   // arming timer, waiting for TRIG
 	LTC2368_ArmAdvancedTimer(sampling_conf->tim_slave.instance, sampling_conf->tim_slave.is_advanced);
 	LTC2368_EnableTimer(sampling_conf->tim_comm.instance, sampling_conf->tim_comm.ch);   // arming timer, waiting for TRIG
 	LTC2368_ArmAdvancedTimer(sampling_conf->tim_comm.instance, sampling_conf->tim_comm.is_advanced);
@@ -225,6 +226,7 @@ void LTC2368_SlaveIrqHandling(LTC2368_ClockHandler *tim_delay, LTC2368_ClockHand
 	uint32_t itflag   = tim_slave->instance->SR;
 	if ((itflag & (tim_slave->ch_itr)) == (tim_slave->ch_itr))
 		tim_slave->instance->SR = ~(tim_slave->ch_itr); //__HAL_TIM_CLEAR_FLAG
+
 	/*communication timer is enabled by master timer tim_delay*/
 //	LTC2368_EnableTimer(g_adc_mgr->clock_handler.tim_comm, g_adc_mgr->clock_handler.tim_comm_ch);
 

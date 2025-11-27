@@ -161,15 +161,16 @@ int main(void)
 
 //  HAL_TIM_OC_Start(&htim2, TIM_CHANNEL_2);  // uruchamia wyjście kanału
 //  HAL_TIMEx_OCN_Start_IT(&htim2, TIM_CHANNEL_2);
+
 //  HAL_TIM_OC_Start_IT(&htim2, TIM_CHANNEL_2);
-
+//
 //  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);   // arming timer, waiting for TRIG
-
+//
 //  HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_1);   // arming timer, waiting for TRIG
-//  HAL_TIM_OC_Stop(&htim3, TIM_CHANNEL_1);   // arming timer, waiting for TRIG
+////  HAL_TIM_OC_Stop(&htim3, TIM_CHANNEL_1);   // arming timer, waiting for TRIG
 //  TIM3->CCER &= ~TIM_CCER_CC1E;              // pin OFF
 //  __HAL_TIM_DISABLE(&htim3);
-
+//
 //  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);   // arming timer, waiting for TRIG
 
   /* USER CODE END 2 */
