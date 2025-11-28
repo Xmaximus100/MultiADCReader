@@ -15,6 +15,7 @@
 #define REF_FREQ 10000000
 #define MAX_SAMPLING_FREQ 1000000
 #define MAX_SAMPLES_REQUESTED BUFFER_SIZE/4
+#define PSC_MAX 65535
 
 typedef struct {
   uint32_t CTR1;
@@ -67,8 +68,9 @@ typedef struct LTC2368_ClockHandler {
 
 typedef struct LTC2368_SamplingClock {
 	GPIO_Assignment cnv_pin;
-	uint32_t freq;
+	uint32_t samp_freq;
 	uint32_t ref_freq;
+	uint32_t read_freq;
 	LTC2368_ClockHandler tim_master; //defines sampling frequency
 	LTC2368_ClockHandler tim_slave; //drives cnv signal
 	LTC2368_ClockHandler tim_delay; //controls communication timer
@@ -81,6 +83,8 @@ LTC2368_StatusTypeDef LTC2368_Convert(LTC2368_Handler *ltc2368_dev);
 LTC2368_StatusTypeDef LTC2368_Unclock(LTC2368_Handler *ltc2368_dev);
 LTC2368_StatusTypeDef LTC2368_Lock(LTC2368_Handler *ltc2368_dev);
 LTC2368_StatusTypeDef LTC2368_ConfigSampling(LTC2368_SamplingClock *sampling_conf, uint32_t frequency);
+LTC2368_StatusTypeDef LTC2368_ConfigReading(LTC2368_SamplingClock *sampling_conf, uint32_t prescaler);
+LTC2368_StatusTypeDef LTC2368_AdjustPrescaler(LTC2368_SamplingClock *sampling_conf, uint32_t frequency, uint32_t *prescaler);
 LTC2368_StatusTypeDef LTC2368_SelectSource(LTC2368_SamplingClock *sampling_conf, uint32_t source);
 LTC2368_StatusTypeDef LTC2368_ArmTimers(LTC2368_SamplingClock *sampling_conf);
 LTC2368_StatusTypeDef LTC2368_EnableTimer(TIM_TypeDef *tim, uint32_t channel);

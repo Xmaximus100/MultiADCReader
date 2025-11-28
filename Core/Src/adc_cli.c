@@ -40,7 +40,10 @@ AT_StatusTypeDef Cmd_ADC_SETUP(AT_CtxT *ctx, int argc, const char *argv[]){
 		if (!AT_StrToUnsignedInt(argv[3], &dev_amount)) return AT_ARG;
 		if (!AT_StrToUnsignedInt(argv[4], &mode)) return AT_ARG;
 		if (freq < MAX_SAMPLING_FREQ) {
+			uint32_t prescaler;
 			LTC2368_ConfigSampling(&g_adc_mgr->clock_handler, freq);
+			LTC2368_AdjustPrescaler(&g_adc_mgr->clock_handler, g_adc_mgr->clock_handler.samp_freq, &prescaler);
+			LTC2368_ConfigReading(&g_adc_mgr->clock_handler, prescaler);
 		}
 		else return AT_ARG;
 		if (samples_requested > 0 && samples_requested < MAX_SAMPLES_REQUESTED){
@@ -98,10 +101,34 @@ AT_StatusTypeDef Cmd_CLOCK_SOURCE(AT_CtxT *ctx, int argc, const char *argv[]){
 		else if (AT_StrToUnsignedInt(argv[1], &freq));
 		else return AT_ARG;
 		LTC2368_SelectSource(&g_adc_mgr->clock_handler, freq);
-		LTC2368_ConfigSampling(&g_adc_mgr->clock_handler, g_adc_mgr->clock_handler.freq);
+		LTC2368_ConfigSampling(&g_adc_mgr->clock_handler, g_adc_mgr->clock_handler.samp_freq);
 		return AT_OK;
 	}
 	else return AT_UNK;
+}
+
+AT_StatusTypeDef Cmd_CLOCK_SPEED(AT_CtxT *ctx, int argc, const char *argv[]){
+	if (ADC_BusyCheck()) return AT_BUSY;
+	if (argc == 2 || argc == 3){
+		uint32_t psc;
+		if (AT_StrToUnsignedInt(argv[1], &psc));
+		else return AT_ARG;
+		LTC2368_ConfigReading(&g_adc_mgr->clock_handler, psc);
+		if (argc == 2) return AT_OK;
+		if (ADC_DisplayConfig(g_adc_mgr)) {
+			return AT_OK;
+		} else return AT_ERROR;
+	}
+	else return AT_UNK;
+}
+
+AT_StatusTypeDef Cmd_CLOCK_CONFIG(AT_CtxT *ctx, int argc, const char *argv[]){
+	if (ADC_BusyCheck()) return AT_BUSY;
+	if (argc == 1){
+		if (ADC_DisplayConfig(g_adc_mgr)) {
+			return AT_OK;
+		} else return AT_ERROR;
+	} else return AT_UNK;
 }
 
 AT_StatusTypeDef Cmd_ADC_START(AT_CtxT *ctx, int argc, const char *argv[]){
@@ -172,6 +199,8 @@ void ADC_CommandInit(void){
 	AT_Register("ADC:READ", 	Cmd_ADC_READ, 		"Set requested number of samples or type 0 for 1second interval collection");
 	AT_Register("ADC:SAMPLING", Cmd_ADC_SAMPLING, 	"Define sampling frequency from 1 to 100k in Hz");
 	AT_Register("CLK:SOURCE", 	Cmd_CLOCK_SOURCE, 	"Define clock source: (I)nternal, (E)xternal or type frequency value");
+	AT_Register("CLK:SPEED", 	Cmd_CLOCK_SPEED, 	"Define reading clock prescaler value");
+	AT_Register("CLK:CONFIG", 	Cmd_CLOCK_CONFIG, 	"Display current clock configuration");
 	AT_Register("ADC:START", 	Cmd_ADC_START, 		"Start sampling");
 	AT_Register("ADC:STOP", 	Cmd_ADC_STOP, 		"Stop sampling");
 	AT_Register("ADC:DISPLAY",	Cmd_ADC_DISPLAY,	"Display n amount of samples or type 0 to print out whole buffer");

@@ -18,6 +18,12 @@
 //	return status;
 //}
 
+static inline uint32_t LTC2368_CountFreq(TIM_TypeDef *tim, uint32_t base){
+	uint32_t base_freq = (uint32_t)(base/(tim->PSC+1));
+	uint32_t output_freq = (uint32_t)(base_freq/(tim->ARR+1));
+	return output_freq;
+}
+
 LTC2368_StatusTypeDef LTC2368_Init(LTC2368_SamplingClock *sampling_clock, TIM_TypeDef *tim_master, uint32_t tim_master_ch, TIM_TypeDef *tim_slave, uint32_t tim_slave_ch, TIM_TypeDef *tim_delay, uint32_t tim_delay_ch, TIM_TypeDef *tim_comm, uint32_t tim_comm_ch){
 	sampling_clock->tim_master.instance = tim_master;
 	sampling_clock->tim_master.ch = tim_master_ch;
@@ -31,7 +37,9 @@ LTC2368_StatusTypeDef LTC2368_Init(LTC2368_SamplingClock *sampling_clock, TIM_Ty
 	sampling_clock->tim_comm.instance = tim_comm;
 	sampling_clock->tim_comm.ch = tim_comm_ch;
 	sampling_clock->tim_comm.is_advanced = (sampling_clock->tim_comm.instance)?true:false;
-	sampling_clock->freq = 2000;
+	sampling_clock->ref_freq = SYSTEM_FREQ;
+	sampling_clock->samp_freq = LTC2368_CountFreq(tim_master, sampling_clock->ref_freq); //2000
+	sampling_clock->read_freq = LTC2368_CountFreq(tim_comm, SYSTEM_FREQ);
 	return LTC2368_OK;
 }
 
@@ -71,8 +79,30 @@ LTC2368_StatusTypeDef LTC2368_ConfigSampling(LTC2368_SamplingClock *sampling_con
 	/* Clear the update flag */
 		CLEAR_BIT(sampling_conf->tim_master.instance->SR, TIM_FLAG_UPDATE);
 	}
-	sampling_conf->freq = frequency;
+	sampling_conf->samp_freq = LTC2368_CountFreq(sampling_conf->tim_master.instance, sampling_conf->ref_freq);
 //	__HAL_TIM_ENABLE(sampling_conf->tim_master); //
+	return LTC2368_OK;
+}
+
+LTC2368_StatusTypeDef LTC2368_ConfigReading(LTC2368_SamplingClock *sampling_conf, uint32_t prescaler){
+	if (prescaler > PSC_MAX) return LTC2368_ERROR;
+	sampling_conf->tim_comm.instance->PSC = prescaler;
+	sampling_conf->read_freq = LTC2368_CountFreq(sampling_conf->tim_comm.instance, SYSTEM_FREQ);
+	return LTC2368_OK;
+}
+
+LTC2368_StatusTypeDef LTC2368_AdjustPrescaler(LTC2368_SamplingClock *sampling_conf, uint32_t frequency, uint32_t *prescaler){
+	if (frequency > 550000) *prescaler = 3;
+	else if (frequency > 500000) *prescaler = 4;
+	else if (frequency > 450000) *prescaler = 5;
+	else if (frequency > 400000) *prescaler = 6;
+	else if (frequency > 350000) *prescaler = 7;
+	else if (frequency > 300000) *prescaler = 8;
+	else if (frequency > 250000) *prescaler = 9;
+	else if (frequency > 200000) *prescaler = 10;
+	else if (frequency > 100000) *prescaler = 20;
+	else if (frequency > 50000) *prescaler = 40;
+	else *prescaler = 80;
 	return LTC2368_OK;
 }
 
@@ -83,6 +113,7 @@ static void inline LTC2368_ArmAdvancedTimer(TIM_TypeDef *tim, bool is_advanced){
 
 LTC2368_StatusTypeDef LTC2368_ArmTimers(LTC2368_SamplingClock *sampling_conf){
 	LTC2368_EnableTimer_IT(sampling_conf->tim_slave.instance, sampling_conf->tim_slave.ch, &sampling_conf->tim_slave.ch_itr);
+	LTC2368_EnableTimer(sampling_conf->tim_slave.instance, sampling_conf->tim_slave.ch);
 	LTC2368_ArmAdvancedTimer(sampling_conf->tim_slave.instance, sampling_conf->tim_slave.is_advanced);
 	LTC2368_EnableTimer(sampling_conf->tim_comm.instance, sampling_conf->tim_comm.ch);   // arming timer, waiting for TRIG
 	LTC2368_ArmAdvancedTimer(sampling_conf->tim_comm.instance, sampling_conf->tim_comm.is_advanced);

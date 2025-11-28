@@ -72,6 +72,7 @@ bool ADC_StartSampling(void);
 bool ADC_StopSampling(void);
 void ADC_MarkReady(ADC_Handler *m);
 uint8_t ADC_PinToIndex(uint16_t GPIO_Pin);
+bool ADC_DisplayConfig(ADC_Handler *m);
 bool ADC_DisplaySamples_Clear(ADC_Handler *m, bool reset_buf, uint32_t custom_samples_requested);
 bool ADC_DisplaySamples_Raw(ADC_Handler *m, bool reset_buf, uint32_t custom_samples_requested);
 bool ADC_BusyCheck(void);

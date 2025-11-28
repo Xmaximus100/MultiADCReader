@@ -153,10 +153,22 @@ void ADC_Acquire(ADC_Handler *m){
 	}
 }
 
+bool ADC_DisplayConfig(ADC_Handler *m){
+	char buffer[256] = {0};
+	size_t used = 0;
+	used += snprintf(buffer+used, sizeof(buffer)-used, "ADC sampling freq: %ldHz\r\n",m->clock_handler.samp_freq);
+	used += snprintf(buffer+used, sizeof(buffer)-used, "ADC reading freq: %ldHz\r\n",m->clock_handler.read_freq);
+	used += snprintf(buffer+used, sizeof(buffer)-used, "ADC ref freq: %ldHz\r\n",m->clock_handler.ref_freq);
+	used += snprintf(buffer+used, sizeof(buffer)-used, "ADC nodes used: %ld\r\n",m->nodes_used);
+	if (m->display_func.write(buffer, used) != AT_OK) return false;
+	return true;
+}
+
 static int16_t ADC_Calculate_Output(uint32_t sample){
 	sample &= 0xFFFF;
 	int16_t sample_voltage = (sample*REFRENCE_V)/RESOLUTION_BITS;
-	return sample_voltage;  //assuming range is +/-10V and REF is internal 2,5V datasheet p.23
+	int16_t calculated_voltage = sample_voltage-REFRENCE_V;0
+	return calculated_voltage;  //assuming range is +/-10V and REF is internal 2,5V datasheet p.23
 }
 
 
@@ -461,20 +473,6 @@ static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update, u
 
 void ADC_TIM_IRQHandler(void){
 	LTC2368_SlaveIrqHandling(&g_adc_mgr->clock_handler.tim_delay, &g_adc_mgr->clock_handler.tim_slave, &g_adc_mgr->common_ptr);
-	/* Temporal solution for overloading data collection */
-//	if (g_adc_mgr->common_ptr>g_adc_mgr->samples_requested && PSSI_HAL_PSSI_ReceiveComplete_count<g_adc_mgr->nodes_used){
-//		LTC2368_StopSampling(&g_adc_mgr->clock_handler);
-//		PSSI_HAL_PSSI_ReceiveComplete_count=0;
-//		g_adc_mgr->common_ptr=0;
-//		if (g_adc_mgr->continuous){
-//			GPDMA1_CH7_Config_PSSI_P2M_LLI(g_adc_mgr, true, g_adc_mgr->samples_requested);
-//			LTC2368_StartSampling(&g_adc_mgr->clock_handler);
-//		}
-//		else {
-//			g_adc_mgr->state = false;
-//		}
-//	}
-
 }
 
 void ADC_DMA_IRQHandler(void){
