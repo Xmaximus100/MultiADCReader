@@ -167,7 +167,7 @@ bool ADC_DisplayConfig(ADC_Handler *m){
 static int16_t ADC_Calculate_Output(uint32_t sample){
 	sample &= 0xFFFF;
 	int16_t sample_voltage = (sample*REFRENCE_V)/RESOLUTION_BITS;
-	int16_t calculated_voltage = sample_voltage-REFRENCE_V;0
+	int16_t calculated_voltage = sample_voltage-REFRENCE_V;
 	return calculated_voltage;  //assuming range is +/-10V and REF is internal 2,5V datasheet p.23
 }
 
