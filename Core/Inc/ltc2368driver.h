@@ -49,7 +49,7 @@ typedef struct GPIO_Assignment {
 	uint16_t pin;
 } GPIO_Assignment;
 
-typedef struct LTC2368_Handler {
+typedef struct LTC2368_Handler { //used for SPI implementation only
 	uint8_t device_id;
 	//GPIO_Assignment *cnv;
 	GPIO_Assignment *busy_pin;
@@ -60,28 +60,28 @@ typedef struct LTC2368_Handler {
 } LTC2368_Handler;
 
 typedef struct LTC2368_ClockHandler {
-	TIM_TypeDef *instance; //drives cnv signal
-	uint32_t ch;
-	uint32_t ch_itr; //timer channel itr ch1-1, ch2-2, ch3-4, etc.
-	bool is_advanced;
+	TIM_TypeDef *instance; 					//timer instance
+	uint32_t ch;							//timer channel number
+	uint32_t ch_itr; 						//timer channel interrupt flag
+	bool is_advanced;						//true if timer is advanced
 } LTC2368_ClockHandler;
 
 typedef struct LTC2368_SamplingClock {
-	GPIO_Assignment cnv_pin;
-	uint32_t samp_freq;
-	uint32_t ref_freq;
-	uint32_t read_freq;
-	LTC2368_ClockHandler tim_master; //defines sampling frequency
-	LTC2368_ClockHandler tim_slave; //drives cnv signal
-	LTC2368_ClockHandler tim_delay; //controls communication timer
-	LTC2368_ClockHandler tim_comm; //drives communication with adc
+	GPIO_Assignment cnv_pin;					//CNV pin assignment
+	uint32_t samp_freq;							//sampling frequency
+	uint32_t ref_freq;							//reference frequency
+	uint32_t read_freq;							//reading frequency
+	LTC2368_ClockHandler tim_master; 			//defines sampling frequency
+	LTC2368_ClockHandler tim_slave; 			//drives cnv signal
+	LTC2368_ClockHandler tim_delay; 			//controls communication timer
+	LTC2368_ClockHandler tim_comm; 				//drives communication with adc
 } LTC2368_SamplingClock;
 
 LTC2368_StatusTypeDef LTC2368_Init(LTC2368_SamplingClock *sampling_clock, TIM_TypeDef *tim_master, uint32_t tim_master_ch, TIM_TypeDef *tim_slave, uint32_t tim_slave_ch, TIM_TypeDef *tim_delay, uint32_t tim_delay_ch, TIM_TypeDef *tim_comm, uint32_t tim_comm_ch);
-LTC2368_StatusTypeDef LTC2368_Read(LTC2368_Handler *ltc2368_dev);
-LTC2368_StatusTypeDef LTC2368_Convert(LTC2368_Handler *ltc2368_dev);
-LTC2368_StatusTypeDef LTC2368_Unclock(LTC2368_Handler *ltc2368_dev);
-LTC2368_StatusTypeDef LTC2368_Lock(LTC2368_Handler *ltc2368_dev);
+LTC2368_StatusTypeDef LTC2368_Read(LTC2368_Handler *ltc2368_dev); //used for SPI implementation only
+LTC2368_StatusTypeDef LTC2368_Convert(LTC2368_Handler *ltc2368_dev); //used for SPI implementation only
+LTC2368_StatusTypeDef LTC2368_Unclock(LTC2368_Handler *ltc2368_dev); //used for SPI implementation only
+LTC2368_StatusTypeDef LTC2368_Lock(LTC2368_Handler *ltc2368_dev); //used for SPI implementation only
 LTC2368_StatusTypeDef LTC2368_ConfigSampling(LTC2368_SamplingClock *sampling_conf, uint32_t frequency);
 LTC2368_StatusTypeDef LTC2368_ConfigReading(LTC2368_SamplingClock *sampling_conf, uint32_t prescaler);
 LTC2368_StatusTypeDef LTC2368_AdjustPrescaler(LTC2368_SamplingClock *sampling_conf, uint32_t frequency, uint32_t *prescaler);
@@ -94,6 +94,6 @@ LTC2368_StatusTypeDef LTC2368_DisableTimer_IT(TIM_TypeDef *tim, uint32_t channel
 LTC2368_StatusTypeDef LTC2368_StartSampling(LTC2368_SamplingClock *sampling_conf);
 LTC2368_StatusTypeDef LTC2368_StopSampling(LTC2368_SamplingClock *sampling_conf);
 void LTC2368_SlaveIrqHandling(LTC2368_ClockHandler *tim_delay, LTC2368_ClockHandler *tim_comm, volatile uint32_t *counter);
-LTC2368_StatusTypeDef LTC2368_DisplaySamples(LTC2368_Handler *ltc2368_dev, uint16_t requested_samples, char *text_buf);
+LTC2368_StatusTypeDef LTC2368_DisplaySamples(LTC2368_Handler *ltc2368_dev, uint16_t requested_samples, char *text_buf); //used for SPI implementation only
 
 #endif /* INC_LTC2368DRIVER_H_ */
