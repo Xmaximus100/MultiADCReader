@@ -69,13 +69,16 @@ static UINT USBD_ChangeFunction(ULONG Device_State);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
-
-/**
-  * @brief  Application USBX Device Initialization.
-  * @param  none
-  * @retval status
-  */
-
+/*
+ * MX_USBX_Device_Init - Initialize USBX device stack and CDC ACM class
+ * @param none
+ * @return UX_SUCCESS on success, UX_ERROR on failure
+ * 
+ * Initializes the USBX device stack with high-speed and full-speed device frameworks,
+ * string descriptors, and language ID framework. Registers the CDC ACM class with
+ * activation, deactivation, and parameter change callbacks. This function should be
+ * called during system initialization before USB operations.
+ */
 UINT MX_USBX_Device_Init(VOID)
 {
    UINT ret = UX_SUCCESS;
@@ -166,13 +169,15 @@ UINT MX_USBX_Device_Init(VOID)
 
   return ret;
 }
-
-/**
-  * @brief  _ux_utility_interrupt_disable
-  *         USB utility interrupt disable.
-  * @param  none
-  * @retval none
-  */
+/*
+ * _ux_utility_interrupt_disable - Disable interrupts and save previous state
+ * @param none
+ * @return Previous interrupt state (PRIMASK value)
+ * 
+ * Disables all interrupts by setting PRIMASK and returns the previous interrupt state.
+ * This function is called by USBX to ensure atomic operations. The returned value
+ * should be passed to _ux_utility_interrupt_restore to re-enable interrupts.
+ */
 ALIGN_TYPE _ux_utility_interrupt_disable(VOID)
 {
   UINT interrupt_save;
@@ -183,13 +188,15 @@ ALIGN_TYPE _ux_utility_interrupt_disable(VOID)
 
   return interrupt_save;
 }
-
-/**
-  * @brief  _ux_utility_interrupt_restore
-  *         USB utility interrupt restore.
-  * @param  flags
-  * @retval none
-  */
+/*
+ * _ux_utility_interrupt_restore - Restore previous interrupt state
+ * @param flags: Previous interrupt state (from _ux_utility_interrupt_disable)
+ * @return none
+ * 
+ * Restores the interrupt state to the value saved by _ux_utility_interrupt_disable.
+ * This function is called by USBX after completing atomic operations to re-enable
+ * interrupts at the previous priority level.
+ */
 VOID _ux_utility_interrupt_restore(ALIGN_TYPE flags)
 {
 
@@ -197,13 +204,15 @@ VOID _ux_utility_interrupt_restore(ALIGN_TYPE flags)
   __set_PRIMASK(flags);
   /* USER CODE END _ux_utility_interrupt_restore */
 }
-
-/**
-  * @brief  _ux_utility_time_get
-  *         Get Time Tick for host timing.
-  * @param  none
-  * @retval time tick
-  */
+/*
+ * _ux_utility_time_get - Get current system time tick
+ * @param none
+ * @return Current time tick value (from HAL_GetTick)
+ * 
+ * Returns the current system time tick for USBX timing operations.
+ * Uses HAL_GetTick() which provides millisecond-resolution time since system start.
+ * Used by USBX for timeout calculations and timing-dependent operations.
+ */
 ULONG _ux_utility_time_get(VOID)
 {
   ULONG time_tick = 0U;
@@ -215,12 +224,16 @@ ULONG _ux_utility_time_get(VOID)
   return time_tick;
 }
 
-/**
-  * @brief  USBD_ChangeFunction
-  *         This function is called when the device state changes.
-  * @param  Device_State: USB Device State
-  * @retval status
-  */
+/*
+ * USBD_ChangeFunction - Handle USB device state changes
+ * @param Device_State: New USB device state (UX_DEVICE_ATTACHED, UX_DEVICE_REMOVED, etc.)
+ * @return UX_SUCCESS
+ * 
+ * Callback function invoked by USBX when the device state changes. Handles various
+ * state transitions including device attachment/removal, connection/disconnection,
+ * suspend/resume, and Start of Frame (SOF) reception. This function can be extended
+ * to perform application-specific actions on state changes.
+ */
 static UINT USBD_ChangeFunction(ULONG Device_State)
 {
    UINT status = UX_SUCCESS;

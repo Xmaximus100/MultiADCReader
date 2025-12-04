@@ -78,13 +78,15 @@ static uint8_t g_usb_tx_frame[64];              // ramka USB FS (MaxPacket = 64 
 /* USER CODE BEGIN 0 */
 
 /* USER CODE END 0 */
-
-/**
-  * @brief  USBD_CDC_ACM_Activate
-  *         This function is called when insertion of a CDC ACM device.
-  * @param  cdc_acm_instance: Pointer to the cdc acm class instance.
-  * @retval none
-  */
+/*
+ * USBD_CDC_ACM_Activate - Activate CDC ACM device instance
+ * @param cdc_acm_instance: Pointer to CDC ACM class instance
+ * @return none
+ * 
+ * Called by USBX when the CDC ACM device is activated (connected and configured).
+ * Stores the CDC ACM instance pointer for use in transmit/receive operations.
+ * This callback is invoked after successful USB enumeration and configuration.
+ */
 VOID USBD_CDC_ACM_Activate(VOID *cdc_acm_instance)
 {
   /* USER CODE BEGIN USBD_CDC_ACM_Activate */
@@ -95,12 +97,15 @@ VOID USBD_CDC_ACM_Activate(VOID *cdc_acm_instance)
   return;
 }
 
-/**
-  * @brief  USBD_CDC_ACM_Deactivate
-  *         This function is called when extraction of a CDC ACM device.
-  * @param  cdc_acm_instance: Pointer to the cdc acm class instance.
-  * @retval none
-  */
+/*
+ * USBD_CDC_ACM_Deactivate - Deactivate CDC ACM device instance
+ * @param cdc_acm_instance: Pointer to CDC ACM class instance (unused)
+ * @return none
+ * 
+ * Called by USBX when the CDC ACM device is deactivated (disconnected or suspended).
+ * Clears the CDC ACM instance pointer to prevent operations on disconnected device.
+ * This callback is invoked when USB cable is disconnected or device is suspended.
+ */
 VOID USBD_CDC_ACM_Deactivate(VOID *cdc_acm_instance)
 {
   /* USER CODE BEGIN USBD_CDC_ACM_Deactivate */
@@ -111,12 +116,15 @@ VOID USBD_CDC_ACM_Deactivate(VOID *cdc_acm_instance)
   return;
 }
 
-/**
-  * @brief  USBD_CDC_ACM_ParameterChange
-  *         This function is invoked to manage the CDC ACM class requests.
-  * @param  cdc_acm_instance: Pointer to the cdc acm class instance.
-  * @retval none
-  */
+/*
+ * USBD_CDC_ACM_ParameterChange - Handle CDC ACM parameter change requests
+ * @param cdc_acm_instance: Pointer to CDC ACM class instance (unused)
+ * @return none
+ * 
+ * Called by USBX when CDC ACM control parameters change (e.g., baud rate, line coding).
+ * Currently unused but can be extended to handle parameter changes from the host.
+ * This callback is invoked when the host sends SET_LINE_CODING or similar requests.
+ */
 VOID USBD_CDC_ACM_ParameterChange(VOID *cdc_acm_instance)
 {
   /* USER CODE BEGIN USBD_CDC_ACM_ParameterChange */
@@ -128,12 +136,17 @@ VOID USBD_CDC_ACM_ParameterChange(VOID *cdc_acm_instance)
 
 /* USER CODE BEGIN 1 */
 
-/**
-  * @brief  USBD_CDC_ACM_Transmit
-  *         This function allows to send data via USB
-  * @param  buffer: input buffer with data, size: size of the buffer, sent: data sent successfully
-  * @retval status: status of the transmission
-  */
+/*
+ * USBD_CDC_ACM_Transmit - Transmit data via USB CDC ACM interface
+ * @param buffer: Pointer to data buffer to transmit
+ * @param size: Size of data to transmit in bytes
+ * @param sent: Output parameter for number of bytes actually sent
+ * @return 0 on success, 1 if CDC ACM instance is not available
+ * 
+ * Transmits data through the USB CDC ACM interface. Handles state machine for
+ * transmission (IDLE, BUSY, ERROR) and waits for completion. Tracks successful
+ * transfers. Returns 0 on success, 1 if the device is not connected or configured.
+ */
 uint32_t USBD_CDC_ACM_Transmit(uint8_t* buffer, uint32_t size, uint32_t* sent){
     UINT retVal;
     if(cdc_acm!=NULL)
@@ -170,12 +183,17 @@ uint32_t USBD_CDC_ACM_Transmit(uint8_t* buffer, uint32_t size, uint32_t* sent){
     }
 }
 
-/**
-  * @brief  USBD_CDC_ACM_Receive
-  *         This function allows to receive data via USB
-  * @param  buffer: input buffer for data, size: size of the buffer, received: data received successfully
-  * @retval status: status of the transmission
-  */
+/*
+ * USBD_CDC_ACM_Receive - Receive data via USB CDC ACM interface
+ * @param buffer: Pointer to buffer for received data
+ * @param size: Maximum size of buffer in bytes
+ * @param received: Output parameter for number of bytes actually received
+ * @return 0 on success, 1 if CDC ACM instance is not available
+ * 
+ * Receives data from the USB CDC ACM interface. Reads available data into the buffer,
+ * writes it to the RX ring buffer, and processes characters through the AT parser.
+ * Returns 0 on success, 1 if the device is not connected or configured.
+ */
 uint32_t USBD_CDC_ACM_Receive(uint8_t* buffer, uint32_t size, uint32_t* received){
     if(cdc_acm!=NULL)
     {
@@ -197,18 +215,26 @@ uint32_t USBD_CDC_ACM_Receive(uint8_t* buffer, uint32_t size, uint32_t* received
     }
 }
 
-// Pompa TX: spróbuj wysłać kolejny blok z ringu
+/*
+ * USB_TxPumpFromRing - Pump data from ring buffer to USB transmit
+ * @param rb: Pointer to ring buffer containing data to transmit
+ * @return 1 if data was sent or attempted, 0 if buffer was empty, 1 if device unavailable
+ * 
+ * Attempts to transmit data from a ring buffer through the USB CDC ACM interface.
+ * Reads up to 64 bytes (USB full-speed max packet size) from the ring buffer,
+ * transmits it via USB, and removes the sent data from the buffer. This function
+ * should be called periodically or from a task to maintain USB communication.
+ */
 uint32_t USB_TxPumpFromRing(RingBuffer *rb)
 {
 	if (cdc_acm == UX_NULL) return 1;
-//    if (!USB_EpCanTx()) return;       // EP (Endpoint) zajęty
 	uint32_t sent=0;
 
     size_t n = RingBuffer_PeekBlock(rb, g_usb_tx_frame, sizeof(g_usb_tx_frame));
     if (n == 0) return 0;
 
     if (USBD_CDC_ACM_Transmit(g_usb_tx_frame, (uint32_t)n, &sent) == 0){
-        (void)RingBuffer_Consume(rb, n);   // zużyj dopiero po sukcesie
+        (void)RingBuffer_Consume(rb, n);   // consume data from ring buffer if transmission was successful
     }
     return 1;
 }

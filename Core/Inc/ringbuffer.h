@@ -22,10 +22,10 @@ typedef enum
 } RingBuffer_StatusTypeDef;
 
 typedef struct RingBuffer {
-	uint16_t head;
-	uint16_t tail;
-	uint8_t *buf;
-	uint16_t size;
+	uint16_t head;							//head pointer
+	uint16_t tail;							//tail pointer
+	uint8_t *buf;							//buffer pointer
+	uint16_t size;							//buffer size
 } RingBuffer;
 
 RingBuffer_StatusTypeDef RingBuffer_Init(RingBuffer* ring_buffer, uint8_t* buffer, size_t buffer_size);
