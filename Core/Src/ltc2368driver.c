@@ -398,6 +398,7 @@ void LTC2368_SlaveIrqHandling(LTC2368_ClockHandler *tim_delay, LTC2368_ClockHand
 	uint32_t itflag   = tim_slave->instance->SR;
 	if ((itflag & (tim_slave->ch_itr)) == (tim_slave->ch_itr))
 		tim_slave->instance->SR = ~(tim_slave->ch_itr); //__HAL_TIM_CLEAR_FLAG
+
 	/*communication timer is enabled by master timer tim_delay*/
 //	LTC2368_EnableTimer(g_adc_mgr->clock_handler.tim_comm, g_adc_mgr->clock_handler.tim_comm_ch);
 
