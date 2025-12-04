@@ -57,34 +57,14 @@ TIM_HandleTypeDef htim8;
 PCD_HandleTypeDef hpcd_USB_DRD_FS;
 
 /* USER CODE BEGIN PV */
-//uint32_t buffer[BUFFER_SIZE];
-
 __attribute__((section(".dma_llist"), aligned(4096))) DMA_Node ch7_lli[4];
-//__attribute__((section(".dma_llist"), aligned(4096))) DMA_Node ch7_lli2;
-//__attribute__((section(".dma_llist"), aligned(4096))) DMA_Node ch7_lli3;
-//__attribute__((section(".dma_llist"), aligned(4096))) DMA_Node ch7_lli4;
 
 uint32_t *node = (uint32_t*)ch7_lli;
-//uint32_t *node2 = (uint32_t*)&ch7_lli2;
-//uint32_t *node3 = (uint32_t*)&ch7_lli3;
-//uint32_t *node4 = (uint32_t*)&ch7_lli4;
 
 uint32_t buffer[BUFFER_SIZE];
 uint16_t adc_buffer[ADC_BUFFER_SIZE];
 uint8_t usb_buffer[USB_BUFFER_SIZE];
-uint16_t data_ptr = 0;
 uint32_t received = 0;
-extern uint8_t collect_data;
-
-volatile uint8_t usb_kick = 0;
-uint16_t buf[100];
-uint16_t buf_ptr = 0;
-char msg_buf[50];
-char receive_buf[64];
-uint8_t timer_irq = 0;
-uint8_t busy_irq = 0;
-uint8_t sampling_on = 0;
-uint8_t iter = 0;
 
 extern RingBuffer rb_tx;
 extern RingBuffer rb_rx;
@@ -101,14 +81,12 @@ extern ADC_Handler * const g_adc_mgr;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_GPDMA1_Init(void);
-static void MX_PSSI_Init(void);
 static void MX_ICACHE_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_TIM8_Init(void);
 /* USER CODE BEGIN PFP */
-void Toggle_Sampling(void);
 AT_StatusTypeDef USB_Write(const char* buf, size_t len);
 void App_ADC_Init(void);
 /* USER CODE END PFP */
@@ -158,20 +136,6 @@ int main(void)
   /* USER CODE BEGIN 2 */
   MX_USB_PCD_Init();
   App_ADC_Init();
-
-//  HAL_TIM_OC_Start(&htim2, TIM_CHANNEL_2);  // uruchamia wyjście kanału
-//  HAL_TIMEx_OCN_Start_IT(&htim2, TIM_CHANNEL_2);
-//  HAL_TIM_OC_Start_IT(&htim2, TIM_CHANNEL_2);
-
-//  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);   // arming timer, waiting for TRIG
-
-//  HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_1);   // arming timer, waiting for TRIG
-//  HAL_TIM_OC_Stop(&htim3, TIM_CHANNEL_1);   // arming timer, waiting for TRIG
-//  TIM3->CCER &= ~TIM_CCER_CC1E;              // pin OFF
-//  __HAL_TIM_DISABLE(&htim3);
-
-//  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);   // arming timer, waiting for TRIG
-
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -341,38 +305,6 @@ static void MX_ICACHE_Init(void)
   /* USER CODE BEGIN ICACHE_Init 2 */
 
   /* USER CODE END ICACHE_Init 2 */
-
-}
-
-/**
-  * @brief PSSI Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_PSSI_Init(void)
-{
-
-  /* USER CODE BEGIN PSSI_Init 0 */
-////
-  /* USER CODE END PSSI_Init 0 */
-
-  /* USER CODE BEGIN PSSI_Init 1 */
-////
-  /* USER CODE END PSSI_Init 1 */
-  hpssi.Instance = PSSI;
-  hpssi.Init.DataWidth = HAL_PSSI_8BITS;
-  hpssi.Init.BusWidth = HAL_PSSI_8LINES;
-  hpssi.Init.ControlSignal = HAL_PSSI_DE_RDY_DISABLE;
-  hpssi.Init.ClockPolarity = HAL_PSSI_FALLING_EDGE;
-  hpssi.Init.DataEnablePolarity = HAL_PSSI_DEPOL_ACTIVE_LOW;
-  hpssi.Init.ReadyPolarity = HAL_PSSI_RDYPOL_ACTIVE_LOW;
-  if (HAL_PSSI_Init(&hpssi) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN PSSI_Init 2 */
-////
-  /* USER CODE END PSSI_Init 2 */
 
 }
 
@@ -749,17 +681,6 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void Toggle_Sampling(void){
-	if (sampling_on){
-		HAL_TIM_OC_Stop(&htim3, TIM_CHANNEL_1);
-		sampling_on = 0;
-	}
-	else {
-		HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_1);
-		sampling_on = 1;
-	}
-}
-
 AT_StatusTypeDef USB_Write(const char* buf, size_t len){
     size_t n = RingBuffer_WriteString(&rb_tx, buf, len);
     uint32_t packets = 0;
@@ -780,22 +701,24 @@ void App_ADC_Init(void)
 		{ LTC6_BUSY_GPIO_Port, LTC6_BUSY_Pin },  // dev 6
 		{ LTC7_BUSY_GPIO_Port, LTC7_BUSY_Pin },  // dev 7
     };
-//    for (uint8_t i = 3; i < MAX_DEVICES; ++i) {
-//        busy_pins[i].port = NULL;
-//        busy_pins[i].pin  = 0;
-//    }
 
+    /* Adds writing function to AT_CtxT struct */
     AT_Init(USB_Write, NULL);
+    /* Initialise usb receive ring buffer of size 128 */
     RingBuffer_Init(&rb_rx, rb_rx_buf, 128);
+    /* Initialise usb transmit ring buffer of size 4*128 */
     RingBuffer_Init(&rb_tx, rb_tx_buf, 4*MAX_BUFFER_SIZE);
+    /* Initialise available commands to parse by AT Parser */
     ADC_CommandInit();
+    /* Initialise LTC2368_SamplingClock timers */
     LTC2368_Init(&g_adc.clock_handler, (&htim3)->Instance, TIM_CHANNEL_1, (&htim2)->Instance, TIM_CHANNEL_2, (&htim4)->Instance, TIM_CHANNEL_4, (&htim8)->Instance, TIM_CHANNEL_1);
-
+    /* Initialise ADC Handler structure */
     if (!ADC_Init(&g_adc, ch7_lli, GPDMA1_Channel7_NS, buffer, busy_pins, USB_Write, NULL)) {
         Error_Handler();
     }
-
+    /* Prepare timers' channels to work */
     LTC2368_ArmTimers(&g_adc_mgr->clock_handler);
+    /* Select sampling reference source */
     LTC2368_SelectSource(&g_adc_mgr->clock_handler, SYSTEM_FREQ);
 }
 /* USER CODE END 4 */
