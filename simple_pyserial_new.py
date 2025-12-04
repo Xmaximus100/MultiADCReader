@@ -489,7 +489,7 @@ def reader_thread(session: SerialSession):
     Automatycznie ignoruje odpowiedzi "OK\r\n" od urządzenia.
     """
 
-    global message_timeout, bytes_data_expected, config_message_expected
+    global message_timeout, bytes_data_expected, config_message_expected, collection_stopped
     OK_RESPONSE = b"OK\r\n"
     
     while not session.stop_evt.is_set():
@@ -722,8 +722,11 @@ def repl_loop(session: SerialSession):
 
         if line.startswith("/setup"):
             params = line.split("/")
-            if len(params) == 4:
-                repetitive_line = repetitive_line_generator(int(params[2]), int(params[3]))
+            if len(params) >= 3:
+                if len(params) == 3:
+                    repetitive_line = repetitive_line_generator(int(params[2]), 1)
+                else:
+                    repetitive_line = repetitive_line_generator(int(params[2]), int(params[3]))
                 data_collected = False  # reset, bo automatyczne wysyłanie jest w collect_data()
                 data_amount = 0
                 frame_count_64 = 0
