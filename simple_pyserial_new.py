@@ -565,6 +565,7 @@ def repl_loop(session: SerialSession):
         "Komendy: /exit, /ports, /reconn, /help, /data, /decode, /clear, /process_data, /setup, /timeout, /stop, /resume, /export\n"
         "Wyślij: wpisz tekst i Enter -> wyśle jako ASCII + CRLF\n"
         "Raw:    !<bajty> -> wyśle dokładnie to co wpiszesz (bez CRLF)\n"
+        "Acquisition: /setup/<frequency> -> ustawia parametry zbierania danych z zadaną częstotliwością\n"
         "Zatrzymaj: Enter lub /stop -> zatrzymuje zbieranie danych i automatyczne wysyłanie SETUP (dane pozostają)\n"
         "Wznów: /resume -> wznawia zbieranie danych i automatyczne wysyłanie SETUP\n"
         "Timeout: /timeout/<ms> -> ustawia timeout zakończenia kolekcji (domyślnie 150ms)\n"

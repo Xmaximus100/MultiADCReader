@@ -143,7 +143,7 @@ bool ADC_Init(ADC_Handler *m, DMA_Node chx_lli[], DMA_Channel_TypeDef* dma_handl
 	}
 	RCCandGPIO_Config_Regs();
 //	GPDMA1_CH7_Config_PSSI_P2M_LLI(m, true);
-//	PSSI_Config_Regs();
+//	PSSI_Config_Regs(); /* test whether reinitialization of pssi causes bit shift */
 	return true;
 }
 
@@ -519,9 +519,14 @@ static inline void RCCandGPIO_Config_Regs(void)
 void ADC_ChangeRequestedSamples(ADC_Handler *m, uint16_t new_request)
 {
 	m->samples_requested = new_request;
-	PSSI->CR &= ~PSSI_CR_ENABLE;
-	GPDMA1_CH7_Config_PSSI_P2M_LLI(m, true, m->samples_requested);
-	PSSI_Config_Regs();
+	if (g_adc_mgr->nodes_used == -1){
+		PSSI->CR &= ~PSSI_CR_ENABLE; /* test whether reinitialization of pssi causes bit shift */
+		GPDMA1_CH7_Config_PSSI_P2M_LLI(m, true, m->samples_requested);
+		PSSI_Config_Regs(); /* test whether reinitialization of pssi causes bit shift */
+	}
+	else
+		GPDMA1_CH7_Config_PSSI_P2M_LLI(m, true, m->samples_requested);
+
 }
 
 
