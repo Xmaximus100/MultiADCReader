@@ -238,4 +238,11 @@ uint32_t USB_TxPumpFromRing(RingBuffer *rb)
     }
     return 1;
 }
+
+uint32_t USB_TxZLP()
+{
+	uint32_t sent=0;
+	USBD_CDC_ACM_Transmit(g_usb_tx_frame, 0, &sent);
+	return 1;
+}
 /* USER CODE END 1 */

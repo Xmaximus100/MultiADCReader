@@ -682,6 +682,10 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 AT_StatusTypeDef USB_Write(const char* buf, size_t len){
+	if (!len) {
+		USB_TxZLP();
+		return AT_OK;
+	}
     size_t n = RingBuffer_WriteString(&rb_tx, buf, len);
     uint32_t packets = 0;
     //Poking TxPump to start transmission

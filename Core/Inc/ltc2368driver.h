@@ -89,6 +89,7 @@ LTC2368_StatusTypeDef LTC2368_SelectSource(LTC2368_SamplingClock *sampling_conf,
 LTC2368_StatusTypeDef LTC2368_ArmTimers(LTC2368_SamplingClock *sampling_conf);
 LTC2368_StatusTypeDef LTC2368_EnableTimer(TIM_TypeDef *tim, uint32_t channel);
 LTC2368_StatusTypeDef LTC2368_DisableTimer(TIM_TypeDef *tim, uint32_t channel);
+LTC2368_StatusTypeDef LTC2368_ResetTimer(TIM_TypeDef *tim);
 LTC2368_StatusTypeDef LTC2368_EnableTimer_IT(TIM_TypeDef *tim, uint32_t channel, uint32_t *channel_itr);
 LTC2368_StatusTypeDef LTC2368_DisableTimer_IT(TIM_TypeDef *tim, uint32_t channel, uint32_t *channel_itr);
 LTC2368_StatusTypeDef LTC2368_StartSampling(LTC2368_SamplingClock *sampling_conf);

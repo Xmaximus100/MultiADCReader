@@ -250,6 +250,12 @@ LTC2368_StatusTypeDef LTC2368_DisableTimer(TIM_TypeDef *tim, uint32_t channel){
 	return LTC2368_OK;
 }
 
+LTC2368_StatusTypeDef LTC2368_ResetTimer(TIM_TypeDef *tim){
+	//restart counter
+	tim->CNT = 0;
+	return LTC2368_OK;
+}
+
 /*
  * LTC2368_EnableTimer_IT - Enable timer interrupt for a specific channel
  * @param tim: Pointer to timer peripheral
@@ -379,7 +385,9 @@ LTC2368_StatusTypeDef LTC2368_StartSampling(LTC2368_SamplingClock *sampling_conf
  * the generation of conversion triggers. Used to stop sampling operations.
  */
 LTC2368_StatusTypeDef LTC2368_StopSampling(LTC2368_SamplingClock *sampling_conf){
-	return LTC2368_DisableTimer(sampling_conf->tim_master.instance, sampling_conf->tim_master.ch);
+	if (LTC2368_DisableTimer(sampling_conf->tim_master.instance, sampling_conf->tim_master.ch) != LTC2368_OK) return LTC2368_ERROR;
+//	if (LTC2368_ResetTimer(sampling_conf->tim_comm.instance) != LTC2368_OK) return LTC2368_ERROR;
+	return LTC2368_OK;
 }
 
 /*

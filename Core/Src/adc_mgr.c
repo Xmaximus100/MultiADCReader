@@ -142,6 +142,7 @@ bool ADC_Init(ADC_Handler *m, DMA_Node chx_lli[], DMA_Channel_TypeDef* dma_handl
 	    m->busy_pins[i] = busy_pins[i];
 	}
 	RCCandGPIO_Config_Regs();
+	PSSI_Config_Regs();
 //	GPDMA1_CH7_Config_PSSI_P2M_LLI(m, true);
 //	PSSI_Config_Regs(); /* test whether reinitialization of pssi causes bit shift */
 	return true;
@@ -416,7 +417,9 @@ bool ADC_DisplaySamples_Raw(ADC_Handler *m, bool reset_buf, uint32_t custom_samp
     if (in_frame) {                                 // ogon niepełnej ramki
         if (m->display_func.write((char*)frame, in_frame) != AT_OK) return false;
     }
-
+    if (in_frame%64==0) {
+    	if (m->display_func.write("", 0) != AT_OK) return false;
+    }
     return true;
 }
 
@@ -435,11 +438,19 @@ bool ADC_BusyCheck(void){
 
 /* ========================= PSSI ========================= */
 
+static inline void PSSI_Clear_Regs(void)
+{
+	(void)PSSI->DR; //RX flush
+	CLEAR_BIT(PSSI->CR, PSSI_CR_DMAEN);
+	CLEAR_BIT(PSSI->CR, PSSI_CR_ENABLE);
+	WRITE_REG(PSSI->ICR, 0xFFFFFFFFu);
+//	WRITE_REG(PSSI->ICR, PSSI_ICR_OVR_ISC);
+	WRITE_REG(PSSI->IER, PSSI_IER_OVR_IE);
+}
+
 static inline void PSSI_Config_Regs(void)
 {
 	/* Wyczyść ewentualny OVR i włącz przerwanie OVR (IER=0x2) */
-	WRITE_REG(PSSI->ICR, PSSI_ICR_OVR_ISC);
-	WRITE_REG(PSSI->IER, PSSI_IER_OVR_IE);
 
 	/* Konfiguracja PSSI_CR:
 	 - CKPOL = 1 (jak na zrzucie)
@@ -448,6 +459,7 @@ static inline void PSSI_Config_Regs(void)
 	 Reszta pól = 0: 8-bit, 8 linii, DE/RDY wyłączone, polaryzacje DE/RDY nieużywane
 	*/
 	WRITE_REG(PSSI->CR, PSSI_CR_DMAEN);   // PSSI_CR_CKPOL -> 1 if rising edge
+	__DSB(); __ISB();
 	PSSI->CR |= PSSI_CR_ENABLE;
 
 	/* ---- Wartości po tej konfiguracji ----
@@ -519,8 +531,9 @@ static inline void RCCandGPIO_Config_Regs(void)
 void ADC_ChangeRequestedSamples(ADC_Handler *m, uint16_t new_request)
 {
 	m->samples_requested = new_request;
-	if (g_adc_mgr->nodes_used == -1){
-		PSSI->CR &= ~PSSI_CR_ENABLE; /* test whether reinitialization of pssi causes bit shift */
+	int32_t tmp = g_adc_mgr->nodes_used;
+	if (tmp == -1){
+		PSSI_Clear_Regs(); /* test whether reinitialization of pssi causes bit shift */
 		GPDMA1_CH7_Config_PSSI_P2M_LLI(m, true, m->samples_requested);
 		PSSI_Config_Regs(); /* test whether reinitialization of pssi causes bit shift */
 	}
