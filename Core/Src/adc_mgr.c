@@ -459,6 +459,109 @@ bool ADC_BusyCheck(void){
 	return g_adc.state;
 }
 
+/*
+ * ADC_TestPatternWrite - Fill common_buffer with a known pattern for debug (loopback via ADC:DISPLAY).
+ * Layout: 16 bytes per sample (b0..b7 = LSB ch0..ch7, b8..b15 = MSB ch0..ch7), same as PSSI/deint.
+ * pattern_id: 0 = incrementing (sample*8+ch), 1 = 0xAAAA, 2 = 0x5555, 3 = 0xA5A5.
+ */
+void ADC_TestPatternWrite(ADC_Handler *m, uint32_t num_samples, uint8_t pattern_id)
+{
+	uint8_t *raw = (uint8_t *)m->common_buffer;
+	if (num_samples == 0 || num_samples > MAX_SAMPLES_REQUESTED) num_samples = MAX_SAMPLES_REQUESTED;
+	for (uint32_t s = 0; s < num_samples; s++) {
+		uint32_t off = s * 16u;
+		for (uint8_t ch = 0; ch < 8u; ch++) {
+			uint16_t val;
+			switch (pattern_id) {
+				case 1: val = 0xAAAAu; break;
+				case 2: val = 0x5555u; break;
+				case 3: val = 0xA5A5u; break;
+				default: val = (uint16_t)(s * 8u + ch); break;
+			}
+			raw[off + ch] = (uint8_t)(val & 0xFFu);
+			raw[off + 8u + ch] = (uint8_t)(val >> 8u);
+		}
+	}
+	m->common_ptr = 0;
+}
+
+/*
+ * ADC_DebugStats - Send counters and state over display_func (AT+DEBUG:STATS).
+ */
+bool ADC_DebugStats(ADC_Handler *m)
+{
+	char buf[320];
+	size_t n = 0;
+	extern volatile uint32_t PSSI_HAL_PSSI_ReceiveComplete_count;
+	n += snprintf(buf + n, sizeof(buf) - n, "STATS: state=%d continuous=%d\r\n", m->state ? 1 : 0, m->continuous ? 1 : 0);
+	n += snprintf(buf + n, sizeof(buf) - n, "  samples_requested=%lu common_ptr=%lu nodes_used=%ld\r\n",
+		(unsigned long)m->samples_requested, (unsigned long)m->common_ptr, (long)m->nodes_used);
+	n += snprintf(buf + n, sizeof(buf) - n, "  PSSI_ReceiveComplete_count=%lu ndevs=%u\r\n",
+		(unsigned long)PSSI_HAL_PSSI_ReceiveComplete_count, (unsigned)m->ndevs);
+	if (m->display_func.write(buf, n) != AT_OK) return false;
+	return true;
+}
+
+/*
+ * ADC_DebugPSSI - Dump PSSI registers (AT+DEBUG:PSSI).
+ */
+bool ADC_DebugPSSI(ADC_Handler *m)
+{
+	char buf[256];
+	size_t n = 0;
+	uint32_t cr = PSSI->CR;
+	uint32_t sr = PSSI->SR;
+	uint32_t ier = PSSI->IER;
+	uint32_t ris = PSSI->RIS;
+	n += snprintf(buf + n, sizeof(buf) - n, "PSSI: CR=0x%08lX SR=0x%08lX RIS=0x%08lX IER=0x%08lX\r\n", (unsigned long)cr, (unsigned long)sr, (unsigned long)ris, (unsigned long)ier);
+	n += snprintf(buf + n, sizeof(buf) - n, "  CR: ENABLE=%lu DMAEN=%lu  SR: RTT1B=%lu RTT4B=%lu  RIS: OVR=%lu\r\n",
+		(unsigned long)((cr & PSSI_CR_ENABLE) ? 1u : 0u), (unsigned long)((cr & PSSI_CR_DMAEN) ? 1u : 0u),
+		(unsigned long)((sr & PSSI_SR_RTT1B_Msk) ? 1u : 0u), (unsigned long)((sr & PSSI_SR_RTT4B_Msk) ? 1u : 0u),
+		(unsigned long)((ris & PSSI_RIS_OVR_RIS) ? 1u : 0u));
+	if (m->display_func.write(buf, n) != AT_OK) return false;
+	return true;
+}
+
+/*
+ * ADC_DebugDMA - Dump GPDMA channel 7 registers (AT+DEBUG:DMA).
+ */
+bool ADC_DebugDMA(ADC_Handler *m)
+{
+	DMA_Channel_TypeDef *ch = m->dma_handler;
+	char buf[320];
+	size_t n = 0;
+	n += snprintf(buf + n, sizeof(buf) - n, "DMA CH7: CCR=0x%08lX CFCR=0x%08lX CSR=0x%08lX\r\n",
+		(unsigned long)ch->CCR, (unsigned long)ch->CFCR, (unsigned long)ch->CSR);
+	n += snprintf(buf + n, sizeof(buf) - n, "  CBR1(BNDT)=%lu CLBAR=0x%08lX CLLR=0x%08lX\r\n",
+		(unsigned long)(ch->CBR1 & 0xFFFFu), (unsigned long)ch->CLBAR, (unsigned long)ch->CLLR);
+	n += snprintf(buf + n, sizeof(buf) - n, "  CSAR=0x%08lX CDAR=0x%08lX\r\n", (unsigned long)ch->CSAR, (unsigned long)ch->CDAR);
+	if (m->display_func.write(buf, n) != AT_OK) return false;
+	return true;
+}
+
+/*
+ * ADC_DebugTIM - Dump timer registers for master, slave, delay, comm (AT+DEBUG:TIM).
+ */
+bool ADC_DebugTIM(ADC_Handler *m)
+{
+	LTC2368_SamplingClock *clk = &m->clock_handler;
+	const struct { const char *name; TIM_TypeDef *tim; } tims[] = {
+		{ "master", clk->tim_master.instance },
+		{ "slave",  clk->tim_slave.instance },
+		{ "delay",  clk->tim_delay.instance },
+		{ "comm",   clk->tim_comm.instance },
+	};
+	char buf[400];
+	size_t n = 0;
+	for (int i = 0; i < 4; i++) {
+		TIM_TypeDef *t = tims[i].tim;
+		if (!t) continue;
+		n += snprintf(buf + n, sizeof(buf) - n, "TIM %s: CR1=0x%04lX PSC=%lu ARR=%lu CNT=%lu SR=0x%04lX\r\n",
+			tims[i].name, (unsigned long)(t->CR1 & 0xFFFFu), (unsigned long)t->PSC, (unsigned long)t->ARR, (unsigned long)t->CNT, (unsigned long)(t->SR & 0xFFFFu));
+	}
+	if (m->display_func.write(buf, n) != AT_OK) return false;
+	return true;
+}
 
 /* ========================= PSSI ========================= */
 

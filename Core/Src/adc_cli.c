@@ -259,9 +259,10 @@ AT_StatusTypeDef Cmd_ADC_STOP(AT_CtxT *ctx, int argc, const char *argv[]){
  */
 AT_StatusTypeDef Cmd_ADC_DISPLAY(AT_CtxT *ctx, int argc, const char *argv[]){
 	if (ADC_BusyCheck()) return AT_BUSY;
-	if (argc == 2){
-		uint32_t requested_samples;
-		if (!AT_StrToUnsignedInt(argv[1], &requested_samples)) return AT_ARG;
+	/* argc >= 1: ADC:DISPLAY lub ADC:DISPLAY <n>; brak liczby = 0 (cały bufor) */
+	if (argc >= 1){
+		uint32_t requested_samples = 0;
+		if (argc >= 2 && !AT_StrToUnsignedInt(argv[1], &requested_samples)) return AT_ARG;
 		if (g_adc_mgr->format == 0){
 			if (ADC_DisplaySamples_Raw(g_adc_mgr, KEEP_BUF, requested_samples) == false){
 				return AT_ERROR;
@@ -321,6 +322,60 @@ AT_StatusTypeDef Cmd_ADC_REFRESH(AT_CtxT *ctx, int argc, const char *argv[]){
 }
 
 /*
+ * Cmd_ADC_TESTWRITE - Write test pattern to common_buffer for debug (read back via ADC:DISPLAY).
+ * AT+ADC:TESTWRITE [samples] [pattern_id]
+ * pattern_id: 0=incrementing, 1=0xAAAA, 2=0x5555, 3=0xA5A5. Default samples=requested, pattern=0.
+ */
+AT_StatusTypeDef Cmd_ADC_TESTWRITE(AT_CtxT *ctx, int argc, const char *argv[])
+{
+	if (ADC_BusyCheck()) return AT_BUSY;
+	uint32_t num_samples = g_adc_mgr->samples_requested;
+	uint32_t pattern_id = 0;
+	if (argc >= 2 && !AT_StrToUnsignedInt(argv[1], &num_samples)) return AT_ARG;
+	if (argc >= 3 && !AT_StrToUnsignedInt(argv[2], &pattern_id)) return AT_ARG;
+	if (pattern_id > 3) return AT_ARG;
+	if (num_samples == 0 || num_samples > MAX_SAMPLES_REQUESTED) return AT_ARG;
+	ADC_TestPatternWrite(g_adc_mgr, num_samples, (uint8_t)pattern_id);
+	return AT_OK;
+}
+
+/*
+ * Cmd_DEBUG_STATS - Send counters and state (AT+DEBUG:STATS).
+ */
+AT_StatusTypeDef Cmd_DEBUG_STATS(AT_CtxT *ctx, int argc, const char *argv[])
+{
+	if (ADC_DebugStats(g_adc_mgr)) return AT_OK;
+	return AT_ERROR;
+}
+
+/*
+ * Cmd_DEBUG_PSSI - Dump PSSI registers (AT+DEBUG:PSSI).
+ */
+AT_StatusTypeDef Cmd_DEBUG_PSSI(AT_CtxT *ctx, int argc, const char *argv[])
+{
+	if (ADC_DebugPSSI(g_adc_mgr)) return AT_OK;
+	return AT_ERROR;
+}
+
+/*
+ * Cmd_DEBUG_DMA - Dump GPDMA channel 7 registers (AT+DEBUG:DMA).
+ */
+AT_StatusTypeDef Cmd_DEBUG_DMA(AT_CtxT *ctx, int argc, const char *argv[])
+{
+	if (ADC_DebugDMA(g_adc_mgr)) return AT_OK;
+	return AT_ERROR;
+}
+
+/*
+ * Cmd_DEBUG_TIM - Dump timer registers (AT+DEBUG:TIM).
+ */
+AT_StatusTypeDef Cmd_DEBUG_TIM(AT_CtxT *ctx, int argc, const char *argv[])
+{
+	if (ADC_DebugTIM(g_adc_mgr)) return AT_OK;
+	return AT_ERROR;
+}
+
+/*
  * ADC_CommandInit - Initialize and register all ADC-related AT commands
  * @param none
  * @return none
@@ -344,5 +399,10 @@ void ADC_CommandInit(void){
 	AT_Register("ADC:DISPLAY",	Cmd_ADC_DISPLAY,	"Display n amount of samples or type 0 to print out whole buffer");
 	AT_Register("ADC:FORMAT",	Cmd_ADC_FORMAT,		"Set display format: (R)aw or (C)lear for raw efficient or clear readable");
 	AT_Register("ADC:MODE", 	Cmd_ADC_REFRESH,	"Set refresh time of display data in ms");
+	AT_Register("ADC:TESTWRITE", Cmd_ADC_TESTWRITE, "Debug: write test pattern to buffer [samples] [0..3]");
+	AT_Register("DEBUG:STATS",  Cmd_DEBUG_STATS,	"Debug: print counters and state");
+	AT_Register("DEBUG:PSSI",   Cmd_DEBUG_PSSI,	"Debug: dump PSSI registers");
+	AT_Register("DEBUG:DMA",    Cmd_DEBUG_DMA,		"Debug: dump GPDMA CH7 registers");
+	AT_Register("DEBUG:TIM",   Cmd_DEBUG_TIM,		"Debug: dump timer registers (master/slave/delay/comm)");
 	AT_Register("HELP", 		Cmd_HELP, 			"List out optional commands");
 }

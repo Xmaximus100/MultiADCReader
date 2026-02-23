@@ -81,4 +81,11 @@ void ADC_ChangeRequestedSamples(ADC_Handler *m, uint16_t new_request);
 void ADC_TIM_IRQHandler(void);
 void ADC_DMA_IRQHandler(void);
 
+/* Debug: zapis wzorca do RAM, odczyt po USB przez ADC:DISPLAY */
+void ADC_TestPatternWrite(ADC_Handler *m, uint32_t num_samples, uint8_t pattern_id);
+bool ADC_DebugStats(ADC_Handler *m);
+bool ADC_DebugPSSI(ADC_Handler *m);
+bool ADC_DebugDMA(ADC_Handler *m);
+bool ADC_DebugTIM(ADC_Handler *m);
+
 #endif /* INC_ADC_MGR_H_ */

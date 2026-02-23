@@ -18,6 +18,11 @@ AT_StatusTypeDef Cmd_ADC_STOP(AT_CtxT *ctx, int argc, const char *argv[]);
 AT_StatusTypeDef Cmd_ADC_DISPLAY(AT_CtxT *ctx, int argc, const char *argv[]);
 AT_StatusTypeDef Cmd_ADC_FORMAT(AT_CtxT *ctx, int argc, const char *argv[]);
 AT_StatusTypeDef Cmd_ADC_REFRESH(AT_CtxT *ctx, int argc, const char *argv[]);
+AT_StatusTypeDef Cmd_ADC_TESTWRITE(AT_CtxT *ctx, int argc, const char *argv[]);
+AT_StatusTypeDef Cmd_DEBUG_STATS(AT_CtxT *ctx, int argc, const char *argv[]);
+AT_StatusTypeDef Cmd_DEBUG_PSSI(AT_CtxT *ctx, int argc, const char *argv[]);
+AT_StatusTypeDef Cmd_DEBUG_DMA(AT_CtxT *ctx, int argc, const char *argv[]);
+AT_StatusTypeDef Cmd_DEBUG_TIM(AT_CtxT *ctx, int argc, const char *argv[]);
 
 void ADC_CommandInit(void);
 
