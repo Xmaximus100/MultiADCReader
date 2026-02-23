@@ -49,6 +49,7 @@ typedef struct {
 	uint32_t samples_collected;
 	AT_CtxT display_func;						//function for displaying data
 	bool state; 								//adc on/off
+	bool done;
 	DMA_Node *chx_lli[4];						//list of linked list pointers
 	DMA_Channel_TypeDef* dma_handler;			//main dma handler
 	__IO uint32_t *dma_flags_reg;

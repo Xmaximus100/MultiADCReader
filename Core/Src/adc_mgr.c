@@ -26,6 +26,8 @@ static inline uint16_t bitrev16(uint16_t x);
 static inline void deint_8x16_swar_msb_first(const uint8_t *b, uint16_t ch[8]);
 static inline void RCCandGPIO_Config_Regs(void);
 static inline void PSSI_Config_Regs(void);
+static inline void PSSI_FlushRx(void);
+static inline void PSSI_Reset_Interrupts(void);
 //static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update);
 static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update, uint32_t requested_samples);
 static inline uint32_t GPDMA1_CH7_Build_PSSI_LL(ADC_Handler *m, uint32_t requested_samples);
@@ -136,6 +138,7 @@ bool ADC_Init(ADC_Handler *m, DMA_Node chx_lli[], DMA_Channel_TypeDef* dma_handl
 	m->dma_tc_flag_mask = DMA_CFCR_TCF;
 	m->dma_us_flag_mask = DMA_CFCR_USEF;
 	m->nodes_used = -1;
+	m->done = false;
 	m->common_buffer = buffer;
 	for (uint8_t i=0;i<MAX_EXTI;i++) m->exti_to_dev[i] = 0xFF; //0xFF indicates empty line
 	for (uint8_t i=0;i<MAX_DEVICES;i++) {
@@ -163,6 +166,7 @@ bool ADC_ManagerInit(ADC_Handler *m, uint8_t dev_amount, bool mode){
 	m->ndevs = dev_amount;
 	m->ready_to_disp_mask = 0;
 	m->common_ptr = 0;
+	m->done = false;
 	m->continuous = mode;
 	for(uint8_t i=0;i<dev_amount;i++){
 		m->ltc2368_devs[i].samples_requested = &m->samples_requested;
@@ -190,6 +194,7 @@ static inline void ADC_ReportError(uint8_t error_code, void *user){
 	switch(error_code){
 		case 1: used = snprintf(buf, sizeof(buf), "ERROR OCCURED\r\n"); break;
 		case 2: uint32_t busy_fail = (uint32_t)user; used = snprintf(buf, sizeof(buf), "ERROR BUSY %ld\r\n", busy_fail); break;
+		case 3: used = snprintf(buf, sizeof(buf), "ERROR DMA TIMEOUT\r\n"); break;
 		default: used = snprintf(buf, sizeof(buf), "ERROR OCCURED\r\n"); break;
 	}
 	g_adc_mgr->display_func.write(buf, used);
@@ -206,10 +211,28 @@ static inline void ADC_ReportError(uint8_t error_code, void *user){
  * This function is typically called from the DMA completion interrupt handler.
  */
 void ADC_Acquire(ADC_Handler *m){
-	// We skim through ready_mask and operate on every id that has been reported
-	if (PSSI_HAL_PSSI_ReceiveComplete_count!=m->nodes_used)
-		return;
+	/* Zabezpieczenie: przy bardzo małej liczbie próbek DMA TC czasem nie występuje, common_ptr rośnie w pętli. */
+	if (m->state && m->common_ptr > (uint32_t)m->samples_requested + 64u) {
+		LTC2368_StopSampling(&m->clock_handler);
+		/* for very little amount of samples, when very high speed clock
+		 * - this function is called not until counter exceeds 64 samples */
+		if (PSSI_HAL_PSSI_ReceiveComplete_count != m->nodes_used) {
+			m->state = false;
+			ADC_ReportError(3, NULL);
+			return;
+		}
+	}
+	if (PSSI_HAL_PSSI_ReceiveComplete_count != m->nodes_used) return;
 	LTC2368_StopSampling(&m->clock_handler);
+	m->common_ptr = 0;  /* reset dla kolejnego bloku / zabezpieczenia timeout */
+	/*
+	if (!m->done) return;
+	__disable_irq();
+	m->done = false;
+	PSSI_HAL_PSSI_ReceiveComplete_count = 0;
+	NVIC_ClearPendingIRQ(GPDMA1_Channel7_IRQn);   // właściwy IRQ
+	__enable_irq();
+	*/
 	if (m->format == 0){
 		if (ADC_DisplaySamples_Raw(m, RESET_BUF, 0) == false){
 			ADC_ReportError(0, NULL);
@@ -224,6 +247,7 @@ void ADC_Acquire(ADC_Handler *m){
 			ADC_ReportError(0, NULL);
 		}
 	}
+	PSSI_Reset_Interrupts();
 	PSSI_HAL_PSSI_ReceiveComplete_count = 0;
 	if (m->continuous){
 		GPDMA1_CH7_Config_PSSI_P2M_LLI(m, true, m->samples_requested);
@@ -440,12 +464,35 @@ bool ADC_BusyCheck(void){
 
 static inline void PSSI_Clear_Regs(void)
 {
-	(void)PSSI->DR; //RX flush
+	(void)PSSI->DR;
 	CLEAR_BIT(PSSI->CR, PSSI_CR_DMAEN);
 	CLEAR_BIT(PSSI->CR, PSSI_CR_ENABLE);
+	/* Pełne opróżnienie FIFO PSSI (RTT1B/RTT4B) – jeden odczyt DR nie wystarcza przy 4‑bajtowym FIFO */
+	while ((PSSI->SR & (PSSI_SR_RTT1B_Msk | PSSI_SR_RTT4B_Msk)) != 0u) {
+		(void)PSSI->DR;
+	}
 	WRITE_REG(PSSI->ICR, 0xFFFFFFFFu);
-//	WRITE_REG(PSSI->ICR, PSSI_ICR_OVR_ISC);
 	WRITE_REG(PSSI->IER, PSSI_IER_OVR_IE);
+}
+
+static inline void PSSI_Reset_Interrupts(void)
+{
+//	(void)PSSI->DR; //RX flush
+	WRITE_REG(PSSI->ICR, PSSI_ICR_OVR_ISC);
+}
+
+static inline void PSSI_FlushRx(void)
+{
+	CLEAR_BIT(PSSI->CR, PSSI_CR_ENABLE);
+	CLEAR_BIT(PSSI->CR, PSSI_CR_DMAEN);
+    // Założenie: zegar zatrzymany, DMA wyłączone (żeby FIFO nie napełniało się w trakcie)
+    while ((PSSI->SR & (PSSI_SR_RTT1B_Msk | PSSI_SR_RTT4B_Msk)) != 0u) {
+        (void)PSSI->DR;
+    }
+    WRITE_REG(PSSI->ICR, PSSI_ICR_OVR_ISC);
+
+	SET_BIT(PSSI->CR, PSSI_CR_DMAEN);
+	SET_BIT(PSSI->CR, PSSI_CR_ENABLE);
 }
 
 static inline void PSSI_Config_Regs(void)
@@ -498,7 +545,7 @@ static inline void RCCandGPIO_Config_Regs(void)
     GPIO_InitStruct.Pin = GPIO_PIN_4|GPIO_PIN_6|GPIO_PIN_9;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
     GPIO_InitStruct.Alternate = GPIO_AF13_PSSI;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
@@ -506,14 +553,20 @@ static inline void RCCandGPIO_Config_Regs(void)
                           |GPIO_PIN_8;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
     GPIO_InitStruct.Alternate = GPIO_AF13_PSSI;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_12|GPIO_PIN_13; //pin12 and 13 for debug only
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
     GPIO_InitStruct.Pin = GPIO_PIN_7|GPIO_PIN_9|GPIO_PIN_11;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
     GPIO_InitStruct.Alternate = GPIO_AF13_PSSI;
     HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 }
@@ -533,13 +586,16 @@ void ADC_ChangeRequestedSamples(ADC_Handler *m, uint16_t new_request)
 	m->samples_requested = new_request;
 	int32_t tmp = g_adc_mgr->nodes_used;
 	if (tmp == -1){
-		PSSI_Clear_Regs(); /* test whether reinitialization of pssi causes bit shift */
+		PSSI_Clear_Regs();
 		GPDMA1_CH7_Config_PSSI_P2M_LLI(m, true, m->samples_requested);
-		PSSI_Config_Regs(); /* test whether reinitialization of pssi causes bit shift */
+		PSSI_Config_Regs();
 	}
-	else
+	else {
+		/* Przy kolejnych uruchomieniach bez pełnego drainu FIFO PSSI pozostają stare dane → przesunięcie bitów. */
+		PSSI_Clear_Regs();
 		GPDMA1_CH7_Config_PSSI_P2M_LLI(m, true, m->samples_requested);
-
+		PSSI_Config_Regs();
+	}
 }
 
 
@@ -625,7 +681,9 @@ static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update, u
 
   /* Disable DMA channel and reset flags */
   CLEAR_BIT(ch->CCR, DMA_CCR_EN);
+  for (volatile uint32_t i=0; (READ_BIT(ch->CCR, DMA_CCR_EN) != 0) && (i < 10000); i++) { __NOP(); }
   SET_BIT(ch->CCR, DMA_CCR_RESET);
+  for (volatile uint32_t i=0; (READ_BIT(ch->CCR, DMA_CCR_RESET) != 0) && (i < 10000); i++) { __NOP(); }
   WRITE_REG(ch->CFCR, DMA_CFCR_TCF|DMA_CFCR_HTF|DMA_CFCR_DTEF|DMA_CFCR_ULEF|DMA_CFCR_USEF|DMA_CFCR_TOF);
 
   /* Define used nodes for required buffer size */
@@ -635,7 +693,7 @@ static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update, u
   WRITE_REG(ch->CLBAR, (uint32_t)m->chx_lli[0]);
 
   /* Load CLLR register from first node */
-  WRITE_REG(ch->CLLR, //m->chx_lli[0]->CLLR );
+  WRITE_REG(ch->CLLR, //m->chx_lli[0]->CLLR ); //throws USEF
 		  	  	  	 	 DMA_CLLR_ULL
                      |  DMA_CLLR_USA
                      |  DMA_CLLR_UDA
@@ -643,10 +701,17 @@ static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update, u
                      |  DMA_CLLR_UT1
                      |  DMA_CLLR_UT2);
 
+  /* Time gap between concurrent writings to registers */
+  __DSB();
+  __ISB();
   /* Set channel IRQ and start DMA */
   SET_BIT(ch->CCR, DMA_CCR_TCIE | DMA_CCR_USEIE);
   CLEAR_BIT(ch->CCR, DMA_CCR_HTIE | DMA_CCR_DTEIE | DMA_CCR_TOIE | DMA_CCR_ULEIE);
   SET_BIT(ch->CCR, DMA_CCR_EN);
+  /* Daj czas GPDMA na pełne ustawienie kanału przed pierwszym żądaniem PSSI (szczególnie przy małej liczbie próbek). */
+  __DSB();
+  __ISB();
+  for (volatile uint32_t d = 0; d < 20000u; d++) { __NOP(); }
 }
 
 /*
@@ -659,7 +724,9 @@ static inline void GPDMA1_CH7_Config_PSSI_P2M_LLI(ADC_Handler *m, bool update, u
  * This function should be registered as the interrupt handler for the slave timer.
  */
 void ADC_TIM_IRQHandler(void){
+	GPIOB->BSRR = GPIO_BSRR_BS13;
 	LTC2368_SlaveIrqHandling(&g_adc_mgr->clock_handler.tim_delay, &g_adc_mgr->clock_handler.tim_slave, &g_adc_mgr->common_ptr);
+//	GPIOB->BRR = GPIO_BRR_BR13;
 }
 
 /*
@@ -674,9 +741,23 @@ void ADC_TIM_IRQHandler(void){
  * This function should be registered as the interrupt handler for the DMA channel.
  */
 void ADC_DMA_IRQHandler(void){
+	GPIOB->BSRR = GPIO_BSRR_BS12;
 	if (*g_adc_mgr->dma_flags_reg & g_adc_mgr->dma_tc_flag_mask) {
 		WRITE_REG(g_adc_mgr->dma_handler->CFCR, g_adc_mgr->dma_tc_flag_mask);                                           /* restart */               /* :contentReference[oaicite:18]{index=18} */
 		PSSI_HAL_PSSI_ReceiveComplete_count++;
+		//another approach, but raises errors
+		/*
+		uint32_t c = ++PSSI_HAL_PSSI_ReceiveComplete_count;
+		 if (c == g_adc_mgr->nodes_used) {
+			// HARD STOP – minimalny czas
+			LTC2368_StopSampling(&g_adc_mgr->clock_handler);
+//			CLEAR_BIT(g_adc_mgr->dma_handler->CCR, DMA_CCR_EN);
+			// opcjonalnie: zatrzymaj PSSI żeby nie zbierał do FIFO
+			CLEAR_BIT(PSSI->CR, PSSI_CR_ENABLE);   // albo DMAEN, zależnie od trybu
+//			PSSI_FlushRx();
+			g_adc_mgr->done = true;
+		}
+		*/
 	}
 	if (*g_adc_mgr->dma_flags_reg & g_adc_mgr->dma_us_flag_mask)
 	{
@@ -698,6 +779,7 @@ void ADC_DMA_IRQHandler(void){
 		  Error_Handler();
 		}
 	}
+//	GPIOB->BRR = GPIO_BRR_BR12;
 }
 /*
  * Those functions I decided to leave as a placeholder for alternative changes in architecture

@@ -243,9 +243,9 @@ LTC2368_StatusTypeDef LTC2368_EnableTimer(TIM_TypeDef *tim, uint32_t channel){
  * the counter enable (CEN) bit.
  */
 LTC2368_StatusTypeDef LTC2368_DisableTimer(TIM_TypeDef *tim, uint32_t channel){
-	//enabling channel
+	//disabling channel
 	tim->CCER &= ~(TIM_CCER_CC1E << (channel & 0x1FU));
-	//starting timer
+	//stopping timer
 	tim->CR1 &= ~TIM_CR1_CEN;
 	return LTC2368_OK;
 }

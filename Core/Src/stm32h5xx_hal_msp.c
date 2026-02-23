@@ -218,7 +218,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* htim_base)
     /* Peripheral clock enable */
     __HAL_RCC_TIM2_CLK_ENABLE();
     /* TIM2 interrupt Init */
-    HAL_NVIC_SetPriority(TIM2_IRQn, 0, 0);
+    HAL_NVIC_SetPriority(TIM2_IRQn, 1, 0);
     HAL_NVIC_EnableIRQ(TIM2_IRQn);
     /* USER CODE BEGIN TIM2_MspInit 1 */
 
@@ -479,7 +479,7 @@ void HAL_PCD_MspInit(PCD_HandleTypeDef* hpcd)
     /* Peripheral clock enable */
     __HAL_RCC_USB_CLK_ENABLE();
     /* USB_DRD_FS interrupt Init */
-    HAL_NVIC_SetPriority(USB_DRD_FS_IRQn, 1, 0);
+    HAL_NVIC_SetPriority(USB_DRD_FS_IRQn, 2, 0);
     HAL_NVIC_EnableIRQ(USB_DRD_FS_IRQn);
     /* USER CODE BEGIN USB_DRD_FS_MspInit 1 */
 
